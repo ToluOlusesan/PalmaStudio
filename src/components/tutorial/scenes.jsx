@@ -23,13 +23,13 @@ const SERIF = { fontFamily: 'var(--font-serif)' }
 
 // Insert-tool accent hues, matching CanvasToolbar's TOOL_COLORS.
 const TOOL = {
-  select: '#5B8BC4',
-  pan: '#5FA968',
-  photo: '#D89A4E',
-  video: '#C45B8B',
-  note: '#D85C53',
-  comment: '#9B7BC4',
-  tidy: '#3FA08F',
+  select: '#3B82F6',
+  pan: '#22C55E',
+  photo: '#F59E0B',
+  video: '#EC4899',
+  note: '#EF4444',
+  comment: '#8B5CF6',
+  tidy: '#14B8A6',
 }
 
 // Phosphor (256×256) icon paths, inlined.

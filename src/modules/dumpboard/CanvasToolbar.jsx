@@ -5,17 +5,17 @@ import {
 } from '@phosphor-icons/react'
 import { useCanvasStore } from '../../store/canvasStore.js'
 
-// Muted, distinct hue per tool — same desaturated family as the comment/group
-// palette so the splash of colour still feels at home in the monochrome shell.
+// Vibrant, distinct hue per tool — the one deliberate splash of colour in the
+// monochrome shell, so the dock reads at a glance.
 const TOOL_COLORS = {
-  select: '#5B8BC4', // blue
-  pan: '#5FA968', // green
-  photo: '#D89A4E', // amber
-  video: '#C45B8B', // pink
-  note: '#D85C53', // red
-  comment: '#9B7BC4', // purple
-  tidy: '#3FA08F', // teal
-  export: '#6C7DB0', // indigo
+  select: '#3B82F6', // blue
+  pan: '#22C55E', // green
+  photo: '#F59E0B', // amber
+  video: '#EC4899', // pink
+  note: '#EF4444', // red
+  comment: '#8B5CF6', // violet
+  tidy: '#14B8A6', // teal
+  export: '#6366F1', // indigo
 }
 
 function Sep({ big = false }) {
@@ -29,15 +29,17 @@ function Sep({ big = false }) {
 // Export keeps the default.
 function ToolBtn({ icon: Icon, label, active, onClick, color, big = false, className = '', children }) {
   const h = big ? 'h-10' : 'h-7'
-  const pad = children ? (big ? 'px-3.5' : 'px-2.5') : big ? 'px-3' : 'px-2'
+  const pad = children ? (big ? 'px-3.5' : 'px-2.5') : big ? 'px-2.5' : 'px-2'
   const text = big ? 'text-[13px]' : 'text-[12px]'
   const gap = big ? 'gap-2' : 'gap-1.5'
+  // Concentric with the dock pill: pill radius (20) − pill padding (8) = 12.
+  const radius = big ? 'rounded-xl' : 'rounded-lg'
   return (
     <button
       onClick={onClick}
       title={label}
       aria-label={label}
-      className={`inline-flex items-center ${gap} ${h} ${pad} rounded-lg ${text} transition-colors duration-[120ms] ` +
+      className={`inline-flex items-center ${gap} ${h} ${pad} ${radius} ${text} transition-colors duration-[120ms] ` +
         (active
           ? 'bg-accent text-accent-fg font-medium border-[0.5px] border-transparent'
           : 'text-ink-2 hover:bg-surface-3 hover:text-ink border-[0.5px] border-transparent') +
@@ -89,7 +91,7 @@ export function ToolDock({ onAddNote, onAddComment, onAddFiles, onTidy, extra })
   return (
     <div
       data-tut="dump-toolbar"
-      className="pop-in glass-bar absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1 rounded-[20px] px-2.5 py-1.5"
+      className="pop-in glass-bar absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1 rounded-[20px] p-2"
       onMouseDown={(e) => e.stopPropagation()}
     >
       <ToolBtn big icon={Cursor} label="Select" color={TOOL_COLORS.select} active={tool === 'select'} onClick={() => setTool('select')} />
