@@ -1,0 +1,52 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Palma",
+  "version": "1.0.0",
+  "identifier": "studio.spatialfoundry.palma",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Palma",
+        "width": 1280,
+        "height": 820,
+        "minWidth": 1000,
+        "minHeight": 640,
+        "resizable": true,
+        "decorations": true,
+        "theme": "Dark",
+        "backgroundColor": "#0E0E0C",
+        "dragDropEnabled": true
+      }
+    ],
+    "security": {
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["**"]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "publisher": "Spatial Foundry",
+    "copyright": "© 2026 Spatial Foundry",
+    "category": "GraphicsAndDesign",
+    "shortDescription": "Your creative ground",
+    "longDescription": "Palma — a local-first creative suite for motion and 3D designers. Gather references, video, and notes for a project in one quiet place.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}

@@ -1,0 +1,647 @@
+@import 'tailwindcss';
+
+/* ------------------------------------------------------------------ *
+ * Oasis design tokens — light monochrome (neutral greys on paper). Pure
+ * greys, ink-dark accent, no warm tint anywhere.
+ * @theme exposes them to Tailwind as utilities (bg-surface, text-ink…).
+ *
+ * Lightness map (raised = whiter): bg #f5f5f5 paper · surface #e9e9e9
+ * panels · surface-2 #ffffff raised cards/inputs · surface-3 #dcdcdc
+ * hover/scrollbar. Ink is near-black; ink-2/ink-3 are alpha greys so they
+ * stay legible without going flat black.
+ * ------------------------------------------------------------------ */
+@theme {
+  /* Paper depth: three near-whites that read as one but separate the layers —
+     canvas is the warmest/lightest, panels a hair cooler, modals pure white. */
+  --color-bg: #fafaf8;
+  --color-surface: #f5f5f3;
+  --color-surface-2: #ffffff;
+  --color-surface-3: #e7e7e3;
+
+  --color-card: #ffffff;
+  --color-card-alt: #fafaf8;
+
+  --color-ink: #0a0a0a;
+  --color-ink-2: rgba(10, 10, 10, 0.58);
+  --color-ink-3: rgba(10, 10, 10, 0.4);
+
+  /* Accent is now ink-dark: in light mode the highlight is black-on-paper,
+     so selection rings, handles, marquee and primary buttons all read. */
+  --color-accent: #0a0a0a;
+  --color-accent-fg: #f5f5f5;
+
+  --color-warning: #292929;
+
+  --font-serif: 'DM Serif Display', Georgia, serif;
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  --default-transition-duration: 120ms;
+  --default-transition-timing-function: ease;
+}
+
+/* Canonical CSS variables for inline / dynamic use (canvas transforms,
+   dot grid, borders that Tailwind utilities don't cover cleanly). */
+:root {
+  color-scheme: light;
+
+  --bg: #fafaf8;
+  --surface: #f5f5f3;
+  --surface-2: #ffffff;
+  --surface-3: #e7e7e3;
+  --card: #ffffff;
+  --card-alt: #fafaf8;
+
+  /* Named surface layers (paper depth). */
+  --surface-canvas: #fafaf8;
+  --surface-panel: #f5f5f3;
+  --surface-modal: #ffffff;
+  --ink: #0a0a0a;
+  --ink-2: rgba(10, 10, 10, 0.58);
+  --ink-3: rgba(10, 10, 10, 0.4);
+  --ink-muted: rgba(10, 10, 10, 0.58);
+  --ink-faint: rgba(10, 10, 10, 0.4);
+  --border: rgba(10, 10, 10, 0.12);
+  --border-2: rgba(10, 10, 10, 0.2);
+  --border-strong: rgba(10, 10, 10, 0.2);
+  --accent: #0a0a0a;
+  --accent-fg: #f5f5f5;
+  --sand: rgba(10, 10, 10, 0.04);
+  --sand-hover: rgba(10, 10, 10, 0.07);
+  --warning: #292929;
+  --warning-bg: rgba(10, 10, 10, 0.06);
+  --warning-border: rgba(10, 10, 10, 0.2);
+
+  /* Ruled-paper lines for the Scratchpad (notebook quirk). */
+  --rule-line: rgba(58, 110, 180, 0.26);
+  --rule-margin: rgba(200, 90, 96, 0.38);
+
+  /* Canvas dot-grid colour (Dump + Focus boards) — a token so it inverts in dark. */
+  --grid-dot: rgba(10, 10, 10, 0.09);
+
+  /* Warm-tinted elevation (never grey-black) so shadows feel like paper, not
+     glass. Cards rest on shadow-soft; modals use shadow-lifted. */
+  --shadow-soft: 0 2px 8px hsla(40, 20%, 20%, 0.08);
+  --shadow-lifted: 0 8px 24px hsla(40, 20%, 20%, 0.12);
+}
+
+/* ------------------------------------------------------------------ *
+ * Dark theme — a soft "true dark" (bg #1e1e1e), not pitch black. User-
+ * controlled + persisted (the sidebar switch), applied app-wide via the
+ * `dark` class on <html>. Overrides BOTH the Tailwind @theme utilities
+ * (--color-*) and the canonical inline vars (--bg, --ink…) so utilities and
+ * inline styles agree — this is why the whole app (not just the canvas) flips.
+ * ------------------------------------------------------------------ */
+:root.dark {
+  color-scheme: dark;
+
+  --color-bg: #1e1e1e;
+  --color-surface: #242424;
+  --color-surface-2: #2c2c2c;
+  --color-surface-3: #383838;
+  --color-card: #2c2c2c;
+  --color-card-alt: #1e1e1e;
+  --color-ink: #f4f4f4;
+  --color-ink-2: rgba(255, 255, 255, 0.6);
+  --color-ink-3: rgba(255, 255, 255, 0.4);
+  --color-accent: #f4f4f4;
+  --color-accent-fg: #1e1e1e;
+  --color-warning: #e6e6e6;
+
+  --bg: #1e1e1e;
+  --surface: #242424;
+  --surface-2: #2c2c2c;
+  --surface-3: #383838;
+  --card: #2c2c2c;
+  --card-alt: #1e1e1e;
+  --surface-canvas: #1e1e1e;
+  --surface-panel: #242424;
+  --surface-modal: #2c2c2c;
+  --ink: #f4f4f4;
+  --ink-2: rgba(255, 255, 255, 0.6);
+  --ink-3: rgba(255, 255, 255, 0.4);
+  --ink-muted: rgba(255, 255, 255, 0.6);
+  --ink-faint: rgba(255, 255, 255, 0.4);
+  --border: rgba(255, 255, 255, 0.12);
+  --border-2: rgba(255, 255, 255, 0.2);
+  --border-strong: rgba(255, 255, 255, 0.28);
+  --accent: #f4f4f4;
+  --accent-fg: #1e1e1e;
+  --sand: rgba(255, 255, 255, 0.05);
+  --sand-hover: rgba(255, 255, 255, 0.09);
+  --warning: #e6e6e6;
+  --warning-bg: rgba(255, 255, 255, 0.08);
+  --warning-border: rgba(255, 255, 255, 0.24);
+
+  /* Ruled lines — pushed brighter + more saturated than the light values, since
+     the same faint tint nearly vanishes against pitch black. */
+  --rule-line: rgba(94, 156, 255, 0.55);
+  --rule-margin: rgba(255, 92, 102, 0.6);
+
+  /* Dots go light on black so the grid stays visible. */
+  --grid-dot: rgba(255, 255, 255, 0.07);
+
+  --shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.6);
+  --shadow-lifted: 0 8px 24px rgba(0, 0, 0, 0.78);
+}
+
+/* Frosted overlay chips flip to a dark frost so they read against #1e1e1e. */
+:root.dark .glass-bar {
+  background: rgba(38, 38, 38, 0.74);
+}
+:root.dark ::-webkit-scrollbar-thumb:hover {
+  background: #3f3f3f;
+}
+:root.dark ::selection {
+  background: rgba(255, 255, 255, 0.22);
+  color: var(--ink);
+}
+
+/* Paper grain on the softer #1e1e1e base: unlike pure black, `overlay` has real
+   luminance to work with here, so it adds both light and dark fleck the way it
+   does on paper — closer to the light theme's `multiply` feel than the flatter
+   `screen` trick pure black needed. */
+:root.dark .canvas-grain::before {
+  mix-blend-mode: overlay;
+  opacity: 0.5;
+}
+
+* {
+  border-color: var(--border);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-weight: 400;
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow: hidden;
+}
+
+/* Thin, quiet scrollbars in keeping with the paper feel */
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--surface-3);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #c2c2c2;
+  background-clip: padding-box;
+}
+
+/* The infinite dot grid on the Dump Board. The board element drives the
+   real (pan/zoom-tracked) grid via inline styles; this class is the static
+   fallback for any plain dotted surface. */
+.dot-grid {
+  background-color: var(--bg);
+  background-image: radial-gradient(
+    circle,
+    rgba(10, 10, 10, 0.09) 1px,
+    transparent 1px
+  );
+  background-size: 22px 22px;
+}
+
+/* Paper grain — a faint, static fractal-noise tile multiplied over the dot
+   grid so the canvas reads like paper, not glass. Lives as a ::before on the
+   board background layer: above the dot grid (the element's own background),
+   below all content (cards/connectors paint later in DOM order). Kept screen-
+   static on purpose — the spec warns that re-positioning the grain each pan
+   frame forces a repaint, and at this opacity a static tile is indistinguishable
+   from one that tracks the canvas. */
+.canvas-grain::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.38;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='p'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23p)'/%3E%3C/svg%3E");
+  background-size: 200px 200px;
+}
+
+/* Frosted floating bar — for control overlays that sit ON TOP of media (video
+   transport). The brand permits frosted glass only for floating overlay chips,
+   never for main content cards: this is exactly that case. Light frost so dark
+   ink controls read crisply against it. */
+.glass-bar {
+  background: rgba(255, 255, 255, 0.72);
+  -webkit-backdrop-filter: blur(20px) saturate(120%);
+  backdrop-filter: blur(20px) saturate(120%);
+  border: 0.5px solid var(--border-2);
+  box-shadow: var(--shadow-lifted);
+}
+
+/* Breathe button — one-shot monochrome sheen on click. A transient light
+   sweep, not chrome; resolves back to transparent. overflow:hidden keeps it
+   inside the 6px radius. */
+@keyframes breathe-shimmer {
+  0% {
+    background: transparent;
+    box-shadow: none;
+  }
+  15% {
+    background: linear-gradient(
+      135deg,
+      rgba(10, 10, 10, 0.04),
+      rgba(10, 10, 10, 0.12),
+      rgba(10, 10, 10, 0.04)
+    );
+    box-shadow: 0 0 12px rgba(10, 10, 10, 0.1);
+  }
+  40% {
+    background: linear-gradient(
+      195deg,
+      rgba(10, 10, 10, 0.03),
+      rgba(10, 10, 10, 0.14),
+      rgba(10, 10, 10, 0.03)
+    );
+    box-shadow: 0 0 18px rgba(10, 10, 10, 0.1);
+  }
+  70% {
+    background: linear-gradient(
+      255deg,
+      rgba(10, 10, 10, 0.03),
+      rgba(10, 10, 10, 0.1),
+      rgba(10, 10, 10, 0.03)
+    );
+    box-shadow: 0 0 10px rgba(10, 10, 10, 0.08);
+  }
+  100% {
+    background: transparent;
+    box-shadow: none;
+  }
+}
+.breathe-shimmer {
+  animation: breathe-shimmer 600ms ease-in-out forwards;
+  overflow: hidden;
+}
+
+/* Selection — neutral ink wash */
+::selection {
+  background: rgba(10, 10, 10, 0.14);
+  color: var(--ink);
+}
+
+/* ---- Motion: tasteful, fast, functional ---------------------------------- *
+ * Short ease-out curves only (no spring) so the app feels polished without
+ * fighting the canvas's 1:1 response. Honoured by the reduced-motion media
+ * query above, which collapses every animation to ~0ms.
+ * -------------------------------------------------------------------------- */
+
+/* Canvas cards settle in on mount: a quick rise + fade. Plays once. */
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.card-in {
+  animation: card-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* At-rest cards own their shadow here so it can lift smoothly on hover. The
+   inline shadow takes over only while selected/dragging. */
+.card-rest {
+  box-shadow: var(--shadow-soft);
+  transition:
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+.group:hover .card-rest {
+  box-shadow: var(--shadow-lifted);
+}
+
+/* Floating chrome (menus, toasts, toolbars) pop in from a hair below. */
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.pop-in {
+  animation: pop-in 150ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Send-to-Focus — a brief ink-stamp pulse on the canvas item. CSS only (never
+   Framer Motion on canvas items). */
+@keyframes ink-stamp {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  40% {
+    transform: scale(0.96);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+.sending-to-focus {
+  animation: ink-stamp 180ms ease-out forwards;
+}
+
+/* Plain fade for backdrops / overlays. */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.fade-in {
+  animation: fade-in 140ms ease both;
+}
+
+.font-serif {
+  font-family: var(--font-serif);
+}
+
+/* Scratchpad rich-text surface. A contentEditable region styled so headings,
+   quotes, code and lists render properly while you write. */
+.scratch:focus {
+  outline: none;
+}
+.scratch:empty::before {
+  content: attr(data-placeholder);
+  color: var(--ink-3);
+  font-weight: 300;
+  pointer-events: none;
+}
+.scratch h1 {
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 0.5em 0 0.25em;
+}
+.scratch h2 {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.35;
+  margin: 0.5em 0 0.25em;
+}
+.scratch blockquote {
+  border-left: 2px solid var(--border-2);
+  padding-left: 12px;
+  margin: 0.35em 0;
+  color: var(--ink-2);
+}
+.scratch code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--surface-3);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.scratch ul {
+  list-style: disc;
+  padding-left: 1.5em;
+}
+.scratch ol {
+  list-style: decimal;
+  padding-left: 1.5em;
+}
+.scratch a {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Notebook ruled paper — a paper quirk for the Scratchpad. Blue horizontal
+   rules you write on, plus a pink margin line whose gutter holds the list
+   markers. Line-height is locked to the rule spacing and block margins collapse
+   to 0 so every line of text lands on a rule (like a real notebook). Colours are
+   tokens, so they dim politely in dark mode. */
+.scratch-lined {
+  --rule-h: 28px;
+  line-height: var(--rule-h);
+  /* Top padding is one rule tall so the first line still lands on a line; left
+     padding clears the margin gutter (pink line ~48px). The ruled background
+     fills the whole element — full width and full height (see min-h-full in the
+     component) — so the page reads as one continuous sheet, not a section. */
+  padding: 28px 44px 48px 66px;
+  background-image:
+    linear-gradient(
+      90deg,
+      transparent 51px,
+      var(--rule-margin) 51px,
+      var(--rule-margin) 52px,
+      transparent 52px
+    ),
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent calc(var(--rule-h) - 1px),
+      var(--rule-line) calc(var(--rule-h) - 1px),
+      var(--rule-line) var(--rule-h)
+    );
+}
+.scratch-lined :where(p, div, blockquote) {
+  margin-top: 0;
+  margin-bottom: 0;
+  line-height: var(--rule-h);
+}
+/* Headings run bigger than one rule row (22px/17px vs. the 28px grid), so
+   squeezing them into a single row left the glyphs floating between rules
+   instead of sitting on one. Giving them a line-height that's an exact
+   multiple of --rule-h keeps their box edge (and so their baseline) landing on
+   a real rule instead of a fraction of one — a heading just claims two lines
+   of the page, the way it would on actual ruled paper. */
+.scratch-lined :where(h1, h2) {
+  margin-top: 0;
+  margin-bottom: 0;
+  line-height: calc(var(--rule-h) * 2);
+}
+/* Lists: markers live in the LEFT margin (left of the pink line). Rendered via
+   counters + an absolutely-positioned ::before so we can place them precisely in
+   the gutter rather than beside the text. */
+.scratch-lined ol,
+.scratch-lined ul {
+  list-style: none;
+  margin: 0;
+  padding-left: 0;
+  counter-reset: item;
+}
+.scratch-lined li {
+  position: relative;
+  counter-increment: item;
+  line-height: var(--rule-h);
+}
+.scratch-lined ol > li::before {
+  content: counter(item) ".";
+  position: absolute;
+  left: -62px;
+  width: 44px;
+  text-align: right;
+  color: var(--ink-3);
+}
+.scratch-lined ul > li::before {
+  content: "•";
+  position: absolute;
+  left: -46px;
+  width: 28px;
+  text-align: right;
+  color: var(--ink-3);
+}
+
+/* Library shelf cells — skip layout/paint for cells scrolled out of view. The
+   `auto` intrinsic height is remembered after first render, so the scrollbar
+   stays stable while offscreen cells cost almost nothing. Keeps a large asset
+   grid smooth to scroll. */
+.lib-cell {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 210px;
+}
+
+/* Native textarea / input resets so module surfaces read as paper, not chrome */
+textarea,
+input {
+  font-family: inherit;
+}
+textarea:focus,
+input:focus {
+  outline: none;
+}
+
+/* ------------------------------------------------------------------ *
+ * Tutorial caricatures — ported from the marketing site. Monochrome SVG
+ * "app performing the action" scenes used inside the first-run spotlight
+ * cards. Motion lives in these tc-* classes; the global reduced-motion
+ * rule below neutralises them all automatically.
+ * ------------------------------------------------------------------ */
+:root {
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tc {
+  position: absolute;
+  inset: 0;
+}
+.tc text {
+  font-family: var(--font-sans);
+}
+/* animated elements transform around their own box */
+.tc-fx {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.tc-fx-l {
+  transform-box: fill-box;
+  transform-origin: left center;
+}
+.tc-fx-b {
+  transform-box: fill-box;
+  transform-origin: bottom center;
+}
+
+/* a popover / composer rising in */
+@keyframes tc-rise {
+  0%, 40% { opacity: 0; transform: translateY(9px) scale(0.96); }
+  54% { opacity: 1; transform: translateY(0) scale(1); }
+  90% { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(9px) scale(0.96); }
+}
+.tc-rise { animation: tc-rise 5s var(--ease-out-soft) infinite both; }
+
+/* hard-blinking text caret for the Scratchpad document */
+@keyframes tc-caret {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+.tc-caret { animation: tc-caret 1.06s steps(1, end) infinite; }
+
+/* a soft attention pulse (e.g. the New project / Tidy button) */
+@keyframes tc-pulse {
+  0%, 30%, 100% { opacity: 0.45; }
+  44%, 64% { opacity: 1; }
+}
+.tc-pulse { animation: tc-pulse 5.4s ease-in-out infinite both; }
+
+/* DUMP: tiles keep dropping onto the canvas, staggered */
+@keyframes tc-drop {
+  0% { opacity: 0; transform: translateY(-26px) scale(0.7) rotate(var(--r, 0deg)); }
+  14% { opacity: 1; }
+  30%, 82% { opacity: 1; transform: translateY(0) scale(1) rotate(var(--r, 0deg)); }
+  100% { opacity: 0; transform: translateY(-26px) scale(0.7) rotate(var(--r, 0deg)); }
+}
+.tc-drop { animation: tc-drop 4.8s var(--ease-out-soft) infinite both; will-change: transform, opacity; }
+
+/* COMMENTS: cursor taps, pin drops, note bubble types itself in */
+@keyframes tc-cursor {
+  0%, 6% { opacity: 0; transform: translate(46px, 30px); }
+  18% { opacity: 1; }
+  36% { opacity: 1; transform: translate(0, 0); }
+  56%, 100% { opacity: 0; transform: translate(0, 0); }
+}
+@keyframes tc-pop {
+  0%, 36% { opacity: 0; transform: scale(0); }
+  48% { opacity: 1; transform: scale(1.14); }
+  56%, 90% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1); }
+}
+@keyframes tc-type {
+  0%, 56% { transform: scaleX(0); }
+  74%, 90% { transform: scaleX(1); }
+  100% { transform: scaleX(0); }
+}
+.tc-cursor { animation: tc-cursor 5s var(--ease-out-soft) infinite both; }
+.tc-pop { animation: tc-pop 5s var(--ease-out-soft) infinite both; }
+.tc-type { animation: tc-type 5s var(--ease-out-soft) infinite both; }
+
+/* FOCUS: a scattered tile gathers into a zone slot */
+@keyframes tc-gather {
+  0% { transform: translate(var(--fx, 0), var(--fy, 0)) rotate(var(--fr, 0deg)); }
+  42%, 84% { transform: translate(0, 0) rotate(0deg); }
+  100% { transform: translate(var(--fx, 0), var(--fy, 0)) rotate(var(--fr, 0deg)); }
+}
+@keyframes tc-check {
+  0%, 46% { opacity: 0; transform: scale(0); }
+  58% { opacity: 1; transform: scale(1.2); }
+  66%, 84% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(0); }
+}
+.tc-gather { animation: tc-gather 5.4s var(--ease-out-soft) infinite both; will-change: transform; }
+.tc-check { animation: tc-check 5.4s var(--ease-out-soft) infinite both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tc-drop, .tc-cursor, .tc-pop, .tc-type, .tc-gather, .tc-check,
+  .tc-rise, .tc-pulse, .tc-caret { animation: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}

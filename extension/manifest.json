@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Palma Clipper",
+  "version": "1.0.0",
+  "description": "Save images from anywhere on the web straight into your Palma Inbox.",
+  "permissions": ["contextMenus", "notifications"],
+  "host_permissions": ["http://127.0.0.1:47821/*"],
+  "background": { "service_worker": "background.js" },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Palma Clipper",
+    "default_icon": { "32": "icon32.png", "128": "icon128.png" }
+  },
+  "icons": { "32": "icon32.png", "128": "icon128.png" }
+}

@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-electron/
+build/
+out/
+
+# Desktop packaging artifacts (installers, unpacked app, blockmaps)
+release/
+
+# Rust / Tauri build artifacts
+src-tauri/target/
+
+# Next.js (website)
+.next/
+
+# Vite cache
+.vite/
+*.tsbuildinfo
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+
+# Editor / OS cruft
+.DS_Store
+Thumbs.db
+.idea/
+
+# Claude Code local (personal) settings
+.claude/settings.local.json
+
+# Separate subproject with its own git repo — push independently
+website/

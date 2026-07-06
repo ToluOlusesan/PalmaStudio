@@ -1,0 +1,31 @@
+[package]
+name = "palma"
+version = "1.0.0"
+description = "Palma — your creative ground"
+authors = ["Spatial Foundry"]
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "palma_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["protocol-asset"] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+# Pin: time 0.3.48 has a trait-impl regression that conflicts with cookie 0.18.1
+# (E0119). 0.3.47 satisfies plist's `^0.3.47` requirement and compiles cleanly.
+time = "=0.3.47"
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true
