@@ -300,8 +300,11 @@ export async function renderBoard(
   }
 
   // Connectors on top of content so the arrows read clearly (lines run
-  // edge-to-edge, so they never cover an item's interior).
-  drawEdges(ctx, edges, items, minX, minY, pad, scale, theme)
+  // edge-to-edge, so they never cover an item's interior). Only draw an edge
+  // between items that actually rendered — otherwise a connector to a
+  // non-drawn endpoint (an empty note/comment, or a missing image) leaves a
+  // line dangling to nothing.
+  drawEdges(ctx, edges, drawable, minX, minY, pad, scale, theme)
 
   if (watermark) await drawWatermark(ctx, cw, ch)
 

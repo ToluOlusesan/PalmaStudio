@@ -1,89 +1,90 @@
-# Oasis
+# Palma
 
-> Your creative ground. — Spatial Foundry
+> A quiet place for references. Yours, on disk. — Spatial Foundry
 
-A local-first creative suite for motion & 3D designers. Session-based visual
-research, mood development, motion reference, and presentation — in one
-warm-dark environment that reads like a darkroom, not a dashboard.
+Palma is a **local-first creative suite** for gathering the references, video, and
+notes behind a project — then shaping them into a direction. Every project points
+at its own folder on your disk; your source files stay where they are, in your
+hands. No cloud, no account, no lock-in.
 
-This is the **v1 web build** (Vite + React). A Tauri wrapper with real
-filesystem access is planned for v2; every v1 limitation is flagged in code.
+**[⤓ Download for Windows](https://github.com/ToluOlusesan/PalmaStudio/releases/latest)** · signed installer, ~86 MB
 
-## Run (web)
+## What's inside
+
+- **Dump Board** — an infinite canvas. Drag in images and video, paste
+  screenshots and links, double-click for a note, connect items with arrows,
+  group, multi-select, and Tidy the pile into rows.
+- **Focus** — sort references into zones (colour, texture, motion…) and pull a
+  direction out of the noise.
+- **Scratchpad** — a per-project notebook that autosaves and flows into the
+  exported brief.
+- **Library** — every project's media gathered onto one shelf, searchable and
+  filterable, with one-click export into any project.
+- **Trash** — deleting a project moves it here; restore it any time, or purge it
+  for good with an opt-in wipe of its files on disk.
+- **Export** — boards go out as high-res PNG or PDF (with connectors and notes);
+  palettes and a process brief come along too.
+
+A companion **browser clipper** ([`extension/`](extension/)) sends clips straight
+into a project's Inbox.
+
+## Local-first by design
+
+Each project is a real folder on disk containing a `palma.json` and an `assets/`
+directory. State is cached in the app and mirrored to that folder, so projects
+are portable files you own — not rows in someone's database. App data lives under
+`%APPDATA%\oasis`; the installer offers an optional full reset for existing
+installs, and auto-updates never touch your data.
+
+## Run from source
 
 ```bash
 npm install
-npm run dev     # http://localhost:5173
-npm run build   # production bundle → dist/
+npm run electron:dev      # Vite dev server + Electron shell (hot reload)
+npm run electron:build    # → release/Palma Setup <version>.exe (signed NSIS installer)
 ```
 
-## Desktop app (Tauri)
+Other scripts: `npm run dev` (web preview only), `npm run build` (renderer
+bundle → `dist/`), `npm run build:extension` (package the browser clipper).
 
-Requires the Rust toolchain (MSVC on Windows) + WebView2. Per-project folders
-use the native picker, and Frame Extract writes real PNGs into the project's
-`assets/frames/` on disk.
-
-```bash
-npm run tauri dev      # run the desktop shell against the dev server
-npm run tauri build    # → src-tauri/target/release/bundle/nsis/Palma_<ver>_x64-setup.exe
-npm run tauri icon src-tauri/icons/source.png   # regenerate icons from the mark
-```
-
-Windows installer output: `src-tauri/target/release/bundle/nsis/Palma_1.0.0_x64-setup.exe`.
-Note: `time` is pinned to `=0.3.47` in `src-tauri/Cargo.toml` (0.3.48 breaks `cookie`).
+> Building the Windows installer is memory-hungry (asar + 7za); if it OOMs, run
+> with a larger Node heap and CPU affinity — see `scripts/`.
 
 ## Stack
 
-Vite · React · Tailwind v4 (`@tailwindcss/vite`) · Zustand · React Router v6 ·
-Framer Motion (transitions only) · Phosphor Icons (`regular`). No canvas
-library — the infinite canvas is raw CSS transforms.
+Electron (the desktop shell / keeper) · Vite · React · Tailwind v4 · Zustand ·
+React Router v6 · Framer Motion (transitions only) · Phosphor Icons. The infinite
+canvas is raw CSS transforms — no canvas library. A Tauri shell (`src-tauri/`) is
+kept as a fallback; Electron is the shipping target.
 
 ## Structure
 
 ```
+electron/     main process, preload bridge, custom palma:// asset protocol,
+              local clip-ingest server, window state
 src/
-  components/   AppLayout, Sidebar, Topbar, ModuleTabBar, ProjectShell,
-                Button, NavItem, Badge, Modal, Logo, Thumb, PageView
+  components/ AppLayout, Sidebar, Topbar, TitleBar, Modal, Button, Logo, …
   modules/
-    dashboard/  project grid + new project + journal strip
-    dumpboard/  infinite canvas (pan/zoom/drop/notes/resize) — the core
-    moodboard/  Mood Distiller (shares the canvas engine, separate board)
-    motionref/  video player + frame pinning (F) + timing notes
-    projectskin/ palette extraction + pinned refs + note snapshot
-    bento/      auto-composed bento grid from session assets
-    scratchpad/ freeform per-project text, auto-saved
-    journal/    global passive visual history
-    library/    cross-project shelf (placeholder — Phase 3)
-  store/        projectStore · canvasStore · sessionStore · journalStore
-  hooks/        useCanvas (pan/zoom) · useDrop (intake) · useSession (load/save)
-  utils/        pathUtils · colourExtract · sessionIO · format · id
+    dashboard/  project grid + new / import / trash
+    dumpboard/  the infinite canvas — the core (pan/zoom/drop/notes/connectors)
+    moodboard/  Focus board (zones, queue, curate) — shares the canvas engine
+    motionref/  video player + frame pinning + timing notes
+    scratchpad/ per-project notebook, autosaved
+    library/    cross-project asset shelf
+    trash/      soft-deleted projects: restore / purge
+  store/        projectStore · canvasStore · sessionStore · settingsStore · …
+  utils/        captureBoard (export) · platform (fs bridge) · sessionIO · …
+scripts/        installer.nsh (NSIS), packaging + asset generation
+extension/      browser clipper → project Inbox
 ```
 
-## Design system
+## Design
 
-Warm-dark, one expressive colour (Oasis Cream `#E8E2D8`) per screen. Tokens
-live in `src/index.css` — both as Tailwind `@theme` utilities (`bg-surface`,
-`text-ink-2`…) and as canonical CSS variables (`--border`, `--sand-hover`…) for
-dynamic/canvas use. DM Serif Display for identity & titles; Inter for all UI
-chrome. Motion is functional only: 100–180ms, ease/ease-out, no spring; the
-canvas itself responds 1:1 with no easing.
+Monochrome shell — ink on paper — with one deliberate splash of colour in the
+canvas tools. DM Serif Display for identity and titles, Inter for UI, JetBrains
+Mono for captions and data. Motion is functional: short, eased, no spring; the
+canvas responds 1:1.
 
-## Storage (v1)
+---
 
-Sessions persist to `localStorage`:
-- `oasis.projects` — dashboard summaries
-- `oasis.session.<id>` — full session JSON (state only, never file contents)
-- `oasis.journal` — passive history entries
-
-Canvas state auto-saves on a 2s debounce after any change. Leaving a project
-records a coalesced Journal entry automatically.
-
-### Known v1 limitations (Tauri v2 fixes these)
-
-- Dropped files become object URLs; `path` is simulated from `file.name`.
-  Object URLs don't survive a reload, so file-backed items show the amber
-  **missing** badge until re-dropped. Notes (inline text) persist fully.
-- Motion Refs pins are captured as data URLs (these *do* persist); the clip
-  itself is relinked by re-picking the file.
-- No export pipeline — Bento composes for on-screen review only.
-```
+© Spatial Foundry. All rights reserved.

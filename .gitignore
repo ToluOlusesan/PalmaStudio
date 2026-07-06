@@ -41,3 +41,6 @@ Thumbs.db
 
 # Separate subproject with its own git repo — push independently
 website/
+
+# Internal build-prompt doc — not for the public repo
+oasis-claude-code-prompt.md
