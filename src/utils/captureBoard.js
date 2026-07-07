@@ -137,11 +137,15 @@ function wrapText(ctx, text, maxWidth) {
 function drawTextCard(ctx, it, x, y, w, h, scale, theme = 'light') {
   const pal = THEME[theme] || THEME.light
   const isComment = it.type === 'comment'
+  // A note drawn on its own paper tint (a light sticky wash, unaffected by
+  // theme) keeps dark ink so the text stays legible; comments and untinted
+  // notes sit on the theme's card surface and take the theme ink.
+  const onPaper = !isComment && it.color
   roundRect(ctx, x, y, w, h, 6 * scale)
   // Notes carry a paper tint (the user's chosen colour, unaffected by theme —
   // a coloured sticky note reads the same on any page); comments stay on the
   // theme's card surface with a coloured marker dot.
-  ctx.fillStyle = !isComment && it.color ? it.color : pal.card
+  ctx.fillStyle = onPaper ? it.color : pal.card
   ctx.fill()
   ctx.lineWidth = Math.max(1, 0.6 * scale)
   ctx.strokeStyle = pal.inkSoft
@@ -151,7 +155,7 @@ function drawTextCard(ctx, it, x, y, w, h, scale, theme = 'light') {
   const fontPx = (isComment ? 12 : 13) * scale
   ctx.font = `${fontPx}px Inter, system-ui, sans-serif`
   ctx.textBaseline = 'top'
-  ctx.fillStyle = pal.ink
+  ctx.fillStyle = onPaper ? THEME.light.ink : pal.ink
   const lines = wrapText(ctx, it.content || '', w - pad * 2 - (isComment ? 8 * scale : 0))
   const lh = fontPx * 1.5
   let ty = y + pad

@@ -5,6 +5,15 @@ All notable changes to Palma are recorded here. Versions follow
 installer — electron-updater downloads only the changed blocks against the
 previously installed version (via the `.blockmap` published with each build).
 
+## [1.1.4] — 2026-07-07 · beta
+
+### Fixed
+- **Note text no longer turns white in the dark Process Brief export.** A
+  coloured sticky note keeps its light paper tint on any page, but the exported
+  brief was flipping the text to the dark-theme's white ink — leaving it nearly
+  invisible on the pale card. Tinted notes now always render with dark ink,
+  matching the in-app view.
+
 ## [1.1.3] — 2026-07-07 · beta
 
 ### Fixed
