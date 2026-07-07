@@ -1,7 +1,7 @@
 {
   "name": "oasis",
   "private": true,
-  "version": "1.1.1",
+  "version": "1.1.2",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -39,7 +39,8 @@
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
-      "include": "scripts/installer.nsh"
+      "include": "scripts/installer.nsh",
+      "artifactName": "Palma-Setup.${ext}"
     },
     "publish": [
       {

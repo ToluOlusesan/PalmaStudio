@@ -212,6 +212,12 @@ export default function FocusBoard() {
         <div
           className="absolute top-0 left-0 w-full h-full"
           style={{ transform: `translate(${panX}px, ${panY}px) scale(${zoom})`, transformOrigin: '0 0', willChange: 'transform', zIndex: 1 }}
+          onDoubleClick={(e) => {
+            // Only when the double-click lands on the bare canvas — not on a zone,
+            // note, or comment (those sit in child layers and handle their own).
+            if (e.target !== e.currentTarget || panMode) return
+            addNote(toWorld(e.clientX, e.clientY))
+          }}
         >
           {zones.map((z) => {
             const members = placed.filter((p) => p.zoneId === z.id)

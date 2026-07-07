@@ -5,6 +5,17 @@ All notable changes to Palma are recorded here. Versions follow
 installer — electron-updater downloads only the changed blocks against the
 previously installed version (via the `.blockmap` published with each build).
 
+## [1.1.2] — 2026-07-07 · beta
+
+### Added
+- **Right-click a project card** for a context menu: **Reveal in Explorer**
+  (opens the project's folder in the OS file manager) and **Delete**.
+- **Rename a project** inline from that menu — the card's title becomes an
+  editable field (Enter to save, Esc to cancel); the new name is written back
+  to the project's `palma.json`.
+- **Double-click the Focus canvas** to drop a note where you clicked, ready to
+  type — no trip to the toolbar.
+
 ## [1.1.0] — 2026-07-05 · beta
 
 ### Added
