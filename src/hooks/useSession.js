@@ -12,7 +12,10 @@ const CANVAS_MODULES = ['dumpboard', 'moodboard']
 // navigation, so capture now (async; written back once ready).
 function recordSnapshot(projectId) {
   const { session } = useSessionStore.getState()
-  if (!session) return
+  // Only snapshot when the live session is genuinely the project we're leaving.
+  // If they've diverged, the board in memory belongs to a DIFFERENT project, and
+  // capturing it here would write that board as this project's thumbnail.
+  if (!session || session.id !== projectId) return
   const items = session.modules?.dumpboard?.items || []
   if (items.length === 0) return
   const refCount = items.filter((it) => it.type !== 'note').length

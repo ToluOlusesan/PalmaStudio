@@ -56,6 +56,12 @@ export const useSessionStore = create((set, get) => ({
       const cacheStamp = session.savedAt || ''
       readSessionFile(session.folder).then((disk) => {
         if (!disk || !disk.id) return
+        // The folder's palma.json must belong to THIS project. If a folder is
+        // shared/reused (or holds a stray palma.json from another project), its
+        // id won't match — adopting it would swap in another project's board and
+        // pollute the cache under the wrong key (the "wrong thumbnail / wrong
+        // board" bug). Never reconcile across identities.
+        if (disk.id !== id) return
         const st = get()
         if (st.currentId !== id || st.status !== 'saved') return
         // The status check alone isn't enough: a drop followed by the 2s

@@ -330,7 +330,7 @@ async function build() {
     ['07', 'Scratchpad', '09'],
     ['08', 'Library', '10'],
     ['09', 'Exporting & the Process Brief', '11'],
-    ['10', 'The Palma Clipper (browser extension)', '12'],
+    ['10', 'The Palma Clipper (coming soon)', '12'],
     ['11', 'Appearance — light & dark', '13'],
     ['12', 'Tips for a clean workflow', '14'],
   ]
@@ -386,7 +386,7 @@ async function build() {
   y += 18
 
   y = subhead('The Inbox project', y)
-  y = richParagraph('Palma keeps one special project called **Inbox** as a landing zone. If you save an image with the **Palma Clipper** browser extension while no project is open, it lands here automatically. Open any project first, and the clip goes straight to that project\'s Dump Board instead.', M, y, CW, { lineHeight: 16 })
+  y = richParagraph('Palma keeps one special project called **Inbox** as a landing zone. Once the **Palma Clipper** browser extension ships _(coming soon)_, images you save while no project is open will land here automatically; open any project first and the clip goes straight to that project\'s Dump Board instead.', M, y, CW, { lineHeight: 16 })
   y += 18
 
   y = subhead('Recoloring a project', y)
@@ -417,7 +417,7 @@ async function build() {
     '**Drag & drop** — images or videos from your file manager or a browser window.',
     '**Paste** — a copied screenshot, an image from another app, a URL, or plain text. Palma figures out what you pasted: images become image cards, a direct image link becomes an image reference, anything else becomes a note.',
     '**The toolbar** — Photo/Video buttons open a native file picker.',
-    '**The Palma Clipper** — right-click any image on the web and save it straight to the open project (see section 10).',
+    '**The Palma Clipper** _(coming soon)_ — right-click any image on the web and save it straight to the open project (see section 10).',
   ], M, y, CW, { gap: 6 })
   y += 8
 
@@ -576,7 +576,9 @@ async function build() {
   newPage('10 — Collecting from the web', 'The Palma Clipper')
   y = heading('The Palma Clipper', M + 60)
   y += 26
-  y = richParagraph('The Palma Clipper is a small browser extension (Chrome, Edge, Brave, Arc, and Firefox) that adds a right-click **"Save image to Palma"** option on any image on the web.', M, y, CW, { lineHeight: 16 })
+  y = calloutBox('Coming soon.', 'The Palma Clipper is on the way and not available yet. This section previews how it will work so you know what to expect — the right-click "Save image to Palma" option will arrive in a future update.', M, y, CW)
+  y += 18
+  y = richParagraph('The Palma Clipper will be a small browser extension (Chrome, Edge, Brave, Arc, and Firefox) that adds a right-click **"Save image to Palma"** option on any image on the web.', M, y, CW, { lineHeight: 16 })
   y += 12
   const steps = [
     'Make sure Palma is running — the extension talks to a small local server it hosts on your machine.',

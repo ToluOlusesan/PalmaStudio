@@ -7,7 +7,7 @@ import Button from '../../components/Button.jsx'
 import Modal from '../../components/Modal.jsx'
 import { useProjectStore } from '../../store/projectStore.js'
 import { isDesktop } from '../../utils/platform.js'
-import { relativeDate, thumbTint, seededGradient } from '../../utils/format.js'
+import { relativeDate, thumbTint, seededColor } from '../../utils/format.js'
 
 // Trash — soft-deleted projects live here, out of the way of the dashboard.
 // Restore drops one back onto the board; Purge removes it for good, with an
@@ -69,7 +69,7 @@ export default function Trash() {
 }
 
 function TrashRow({ project, onRestore, onPurge }) {
-  const swatch = thumbTint(project.thumbColor) || project.palette?.[0] || seededGradient(project.name)
+  const swatch = thumbTint(project.thumbColor) || project.palette?.[0] || seededColor(project.name)
   return (
     <motion.div
       variants={{ hidden: { opacity: 0, y: 6 }, show: { opacity: 1, y: 0 } }}

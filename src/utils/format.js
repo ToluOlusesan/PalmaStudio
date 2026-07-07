@@ -22,30 +22,27 @@ export function shortDate(iso) {
     .toUpperCase()
 }
 
-// Deterministic warm-dark gradient seeded from a string — the fallback identity
-// for a project that has no extracted palette yet.
-export function seededGradient(seed = '') {
+// Deterministic warm-dark solid seeded from a string — the fallback identity for
+// a project that has no extracted palette yet. Flat fill (no gradient).
+export function seededColor(seed = '') {
   let h = 0
   for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) & 0xffff
   const base = 24 + (h % 40) // warm hue band, browns/ambers/greens
-  const a = `hsl(${base}, 22%, 16%)`
-  const b = `hsl(${(base + 28) % 360}, 26%, 26%)`
-  const c = `hsl(${(base + 50) % 360}, 18%, 11%)`
-  return `linear-gradient(150deg, ${b} 0%, ${a} 48%, ${c} 100%)`
+  return `hsl(${base}, 22%, 20%)`
 }
 
 // Hand-picked thumbnail tints a user can assign to a project card, overriding the
-// auto palette/seeded fallback. Rich two-stop gradients in the same warm-dark key
-// as seededGradient so cards stay cohesive. `null` key = auto (no override).
+// auto palette/seeded fallback. Flat solid fills in the same warm-dark key as
+// seededColor so cards stay cohesive. `null` key = auto (no override).
 export const THUMB_TINTS = [
-  { key: 'graphite', label: 'Graphite', css: 'linear-gradient(150deg, #303030 0%, #101010 100%)' },
-  { key: 'amber', label: 'Amber', css: 'linear-gradient(150deg, hsl(35,58%,44%) 0%, hsl(28,54%,22%) 100%)' },
-  { key: 'terracotta', label: 'Terracotta', css: 'linear-gradient(150deg, hsl(16,54%,46%) 0%, hsl(14,50%,22%) 100%)' },
-  { key: 'rose', label: 'Rose', css: 'linear-gradient(150deg, hsl(345,40%,48%) 0%, hsl(340,36%,24%) 100%)' },
-  { key: 'lavender', label: 'Lavender', css: 'linear-gradient(150deg, hsl(268,34%,52%) 0%, hsl(266,32%,26%) 100%)' },
-  { key: 'slate', label: 'Slate', css: 'linear-gradient(150deg, hsl(220,30%,46%) 0%, hsl(222,34%,22%) 100%)' },
-  { key: 'sage', label: 'Sage', css: 'linear-gradient(150deg, hsl(150,26%,40%) 0%, hsl(155,30%,18%) 100%)' },
-  { key: 'moss', label: 'Moss', css: 'linear-gradient(150deg, hsl(92,28%,40%) 0%, hsl(96,30%,17%) 100%)' },
+  { key: 'graphite', label: 'Graphite', css: '#262626' },
+  { key: 'amber', label: 'Amber', css: 'hsl(32,55%,40%)' },
+  { key: 'terracotta', label: 'Terracotta', css: 'hsl(15,52%,42%)' },
+  { key: 'rose', label: 'Rose', css: 'hsl(343,38%,42%)' },
+  { key: 'lavender', label: 'Lavender', css: 'hsl(267,33%,46%)' },
+  { key: 'slate', label: 'Slate', css: 'hsl(221,32%,40%)' },
+  { key: 'sage', label: 'Sage', css: 'hsl(152,28%,34%)' },
+  { key: 'moss', label: 'Moss', css: 'hsl(94,29%,32%)' },
 ]
 
 // Resolve a tint key → CSS background, or null when unset/unknown (fall back to

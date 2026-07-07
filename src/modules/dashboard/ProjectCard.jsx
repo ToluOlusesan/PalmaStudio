@@ -6,7 +6,7 @@ import Thumb from '../../components/Thumb.jsx'
 import ContextMenu from '../../components/ContextMenu.jsx'
 import { useProjectStore } from '../../store/projectStore.js'
 import { isElectron, openPath } from '../../utils/platform.js'
-import { relativeDate, seededGradient, THUMB_TINTS } from '../../utils/format.js'
+import { relativeDate, seededColor, THUMB_TINTS } from '../../utils/format.js'
 
 // Portrait project card. 3:4 full-bleed thumbnail + hairline meta strip.
 // Rises + fades in on mount (the parent grid staggers these), and hover lifts
@@ -86,7 +86,7 @@ export default function ProjectCard({ project, onDelete }) {
                 onClick={() => setTint(null)}
                 className="w-5 h-5 rounded-full border-[0.5px] border-[var(--border-2)] transition-transform hover:scale-110"
                 style={{
-                  background: project.palette?.[0] || seededGradient(project.id || project.name),
+                  background: project.palette?.[0] || seededColor(project.id || project.name),
                   outline: !project.thumbColor ? '2px solid var(--ink)' : 'none',
                   outlineOffset: '1px',
                 }}
@@ -108,13 +108,22 @@ export default function ProjectCard({ project, onDelete }) {
           </div>
           <div className="my-1 border-t-[0.5px]" style={{ borderColor: 'var(--border)' }} />
           <button
-            className="w-full text-left px-3 py-1.5 text-[12px] text-ink-2 hover:text-ink hover:bg-[var(--sand-hover)]"
+            className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-[12px] text-ink-2 hover:text-ink hover:bg-[var(--sand-hover)]"
+            onClick={() => {
+              setMenu(false)
+              startRename()
+            }}
+          >
+            <PencilSimple size={15} /> Rename
+          </button>
+          <button
+            className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-[12px] text-[var(--warning)] hover:bg-[var(--sand-hover)]"
             onClick={() => {
               setMenu(false)
               onDelete?.(project)
             }}
           >
-            Delete
+            <Trash size={15} /> Delete
           </button>
         </div>
       )}
@@ -166,6 +175,8 @@ export default function ProjectCard({ project, onDelete }) {
               { separator: true },
               { label: 'Delete', icon: Trash, danger: true, onClick: () => onDelete?.(project) },
             ]}
+            // Rename also lives in the ⋯ menu; keeping it here means right-click
+            // offers the same actions as the dots menu, plus Reveal in Explorer.
             onClose={() => setCtx(null)}
           />
         )}

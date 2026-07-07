@@ -5,6 +5,24 @@ All notable changes to Palma are recorded here. Versions follow
 installer — electron-updater downloads only the changed blocks against the
 previously installed version (via the `.blockmap` published with each build).
 
+## [1.1.3] — 2026-07-07 · beta
+
+### Fixed
+- **Cards no longer borrow another project's thumbnail.** A project whose
+  folder held a `palma.json` from a different project could silently adopt that
+  board — and its snapshot would then be written back as the wrong card's
+  thumbnail. Session reconcile now refuses any on-disk file whose id doesn't
+  match, and the snapshot step only records when the live board truly belongs to
+  the project being left.
+
+### Changed
+- **Rename now lives in the ⋯ card menu**, alongside the colour swatches and
+  Delete (still available on right-click too).
+- **Project cards use flat solid fills** instead of gradients — swatches,
+  the auto/seeded fallback, palette thumbnails, sidebar chips and Trash swatches.
+- **User guide refreshed**: the Palma Clipper section is now marked **coming
+  soon**.
+
 ## [1.1.2] — 2026-07-07 · beta
 
 ### Added
