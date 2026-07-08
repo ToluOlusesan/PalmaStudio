@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { Plus, Minus, ArrowsIn, X, ImageBroken, Rows, Columns, GridFour, NotePencil, ChatCircle } from '@phosphor-icons/react'
+import { Plus, Minus, ArrowsIn, X, ImageBroken, Rows, Columns, GridFour, NotePencil, ChatCircle, Export } from '@phosphor-icons/react'
 import { useFocusStore, ZONE_COLORS, zoneFill, zoneStroke } from '../../store/focusStore.js'
 import { useSettingsStore } from '../../store/settingsStore.js'
 import { zoneLayout, ZONE_LAYOUTS } from '../../utils/focusLayout.js'
@@ -12,7 +12,7 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
 
 // The Focus canvas: tinted Zone containers that hold and arrange the references
 // dropped into them. Populated only by dropping items from the Queue.
-export default function FocusBoard() {
+export default function FocusBoard({ onOpenExport }) {
   const panX = useFocusStore((s) => s.panX)
   const panY = useFocusStore((s) => s.panY)
   const zoom = useFocusStore((s) => s.zoom)
@@ -186,10 +186,21 @@ export default function FocusBoard() {
             <NotePencil size={15} weight="bold" /> Add Note
           </button>
         </div>
-        <div className="flex items-center gap-1.5 text-[11px] tabular-nums text-ink-3">
-          {zones.length} {zones.length === 1 ? 'zone' : 'zones'}
-          <span className="opacity-40">·</span>
-          {placed.length} placed
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 text-[11px] tabular-nums text-ink-3">
+            {zones.length} {zones.length === 1 ? 'zone' : 'zones'}
+            <span className="opacity-40">·</span>
+            {placed.length} placed
+          </div>
+          <span className="w-px h-5 bg-[var(--border)]" />
+          <button
+            onClick={() => onOpenExport?.()}
+            title="Export"
+            aria-label="Export"
+            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[12px] border-[0.5px] border-transparent transition-colors text-ink-2 hover:bg-surface-3 hover:text-ink"
+          >
+            <Export size={15} style={{ color: '#6366F1' }} /> Export
+          </button>
         </div>
       </div>
 
@@ -303,7 +314,10 @@ function Zone({ zone, dragOver, lifted, panMode, count, onResizeState, onAddComm
     e.stopPropagation()
     const start = { x: e.clientX, y: e.clientY, zx: zone.x, zy: zone.y }
     const zoomNow = useFocusStore.getState().zoom
-    const move = (ev) => updateZone(zone.id, { x: Math.round(start.zx + (ev.clientX - start.x) / zoomNow), y: Math.round(start.zy + (ev.clientY - start.y) / zoomNow) })
+    const move = (ev) => {
+      updateZone(zone.id, { x: Math.round(start.zx + (ev.clientX - start.x) / zoomNow), y: Math.round(start.zy + (ev.clientY - start.y) / zoomNow) })
+      useFocusStore.getState().separateZones(zone.id) // zones shove each other aside, never overlap
+    }
     const up = () => {
       window.removeEventListener('mousemove', move)
       window.removeEventListener('mouseup', up)
@@ -318,7 +332,10 @@ function Zone({ zone, dragOver, lifted, panMode, count, onResizeState, onAddComm
     const start = { x: e.clientX, y: e.clientY, w: zone.width, h: zone.height }
     const zoomNow = useFocusStore.getState().zoom
     onResizeState?.(zone.id) // members track the zone 1:1 (no reflow lag) while resizing
-    const move = (ev) => updateZone(zone.id, { width: Math.max(160, Math.round(start.w + (ev.clientX - start.x) / zoomNow)), height: Math.max(120, Math.round(start.h + (ev.clientY - start.y) / zoomNow)) })
+    const move = (ev) => {
+      updateZone(zone.id, { width: Math.max(160, Math.round(start.w + (ev.clientX - start.x) / zoomNow)), height: Math.max(120, Math.round(start.h + (ev.clientY - start.y) / zoomNow)) })
+      useFocusStore.getState().separateZones(zone.id) // grow into a neighbour → it moves aside
+    }
     const up = () => {
       window.removeEventListener('mousemove', move)
       window.removeEventListener('mouseup', up)

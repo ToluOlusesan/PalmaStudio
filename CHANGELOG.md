@@ -5,7 +5,39 @@ All notable changes to Palma are recorded here. Versions follow
 installer — electron-updater downloads only the changed blocks against the
 previously installed version (via the `.blockmap` published with each build).
 
-## [1.1.4] — 2026-07-07 · beta
+## [1.1.5] — 2026-07-08 · beta
+
+### Added
+- **Send to Focus is now a hover action on every image.** Hover an image on the
+  Dump Board and a "Send to Focus" pill appears in the corner — the one action
+  that moves a reference into Focus is no longer hidden in the right-click menu.
+  Once promoted, the pill reads "Sent to Focus." Videos don't show it (Focus is
+  image-only), and the old hover filename label is gone.
+
+### Changed
+- **Export is now one dropdown instead of three look-alike rows.** The Export
+  dialog opens with a single "What to export" picker (Dump Board / Focus Board /
+  Process Brief); the controls beneath adapt to the choice. Process Brief is
+  PDF-only and carries a Light/Dark output toggle; boards export as the canvas
+  looks now. Nothing is greyed-out or gated — every target is always selectable,
+  so a live option never reads as a disabled one.
+- **One Export button per view.** The duplicate Export in the project title bar
+  is gone; export now lives on the board's own toolbar (the coloured button on
+  the Dump Board, a matching one on Focus), and both open the same dialog.
+- **Placed references leave the Queue.** Once a reference is dropped into a Focus
+  zone it lives in that zone and no longer clutters the Queue shelf — the Queue
+  shows only what's still waiting to be placed. Removing a reference from its
+  zone returns it to the Queue.
+- **Focus zones can't overlap anymore.** Dragging or resizing a zone into another
+  pushes the others out of the way (cascading) instead of letting them stack, so
+  the board stays readable without any manual tidying.
+
+### Removed
+- **The installer no longer asks about a "factory reset."** The opt-in data-wipe
+  prompt (added in 1.0.10) is gone; installing or updating always keeps your
+  existing projects and app state.
+
+
 
 ### Fixed
 - **Note text no longer turns white in the dark Process Brief export.** A

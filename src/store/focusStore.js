@@ -157,6 +157,61 @@ export const useFocusStore = create((set, get) => ({
     set((s) => ({ zones: s.zones.map((z) => (z.id === id ? { ...z, ...patch } : z)) }))
   },
   commitZones: () => get().persist(),
+
+  // Zones may not overlap. Called live while a zone is dragged or resized: the
+  // actively-manipulated zone (`fixedId`) stays put and every other zone is
+  // shoved just far enough to clear it, along whichever axis needs the smaller
+  // push. It's a relaxation loop, so a pushed zone in turn pushes its neighbours
+  // (zones cascade out of the way) and it re-runs until nothing overlaps or the
+  // iteration cap is hit. State-only — the drag/resize's own commit persists.
+  separateZones: (fixedId) => {
+    const GAP = 8 // px of breathing room left between separated zones
+    set((s) => {
+      if (s.zones.length < 2) return {}
+      const r = s.zones.map((z) => ({ id: z.id, x: z.x, y: z.y, w: z.width, h: z.height }))
+      for (let iter = 0; iter < 12; iter++) {
+        let moved = false
+        for (let i = 0; i < r.length; i++) {
+          for (let j = i + 1; j < r.length; j++) {
+            const a = r[i]
+            const b = r[j]
+            const ox = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)
+            const oy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y)
+            if (ox <= 0 || oy <= 0) continue // not overlapping
+            moved = true
+            const aFixed = a.id === fixedId
+            const bFixed = b.id === fixedId
+            if (ox < oy) {
+              const push = ox + GAP
+              const dir = a.x + a.w / 2 <= b.x + b.w / 2 ? 1 : -1 // shove b toward +dir, a toward −dir
+              if (aFixed && !bFixed) b.x += dir * push
+              else if (bFixed && !aFixed) a.x -= dir * push
+              else if (!aFixed && !bFixed) {
+                a.x -= (dir * push) / 2
+                b.x += (dir * push) / 2
+              }
+            } else {
+              const push = oy + GAP
+              const dir = a.y + a.h / 2 <= b.y + b.h / 2 ? 1 : -1
+              if (aFixed && !bFixed) b.y += dir * push
+              else if (bFixed && !aFixed) a.y -= dir * push
+              else if (!aFixed && !bFixed) {
+                a.y -= (dir * push) / 2
+                b.y += (dir * push) / 2
+              }
+            }
+          }
+        }
+        if (!moved) break
+      }
+      return {
+        zones: s.zones.map((z) => {
+          const m = r.find((rr) => rr.id === z.id)
+          return m ? { ...z, x: Math.round(m.x), y: Math.round(m.y) } : z
+        }),
+      }
+    })
+  },
   deleteZone: (id) => {
     // Items placed in this zone return to the queue's unplaced state.
     set((s) => ({

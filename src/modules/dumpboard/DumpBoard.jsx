@@ -52,6 +52,7 @@ const remapGroupIds = (arr) => {
 export default function DumpBoard({
   emptyHint = 'Drag images, videos, or paste anything here',
   tools = null,
+  onOpenExport,
 }) {
   const items = useCanvasStore((s) => s.items)
   const selectedIds = useCanvasStore((s) => s.selectedIds)
@@ -100,7 +101,6 @@ export default function DumpBoard({
   const [marquee, setMarquee] = useState(null) // { x0,y0,x1,y1 } rubber-band (screen coords)
   const [showHelp, setShowHelp] = useState(false) // shortcuts cheat-sheet overlay
   const [picker, setPicker] = useState(null) // { mode:'move'|'copy', items } project picker
-  const [exportMenu, setExportMenu] = useState(null) // { x, y } PNG/PDF chooser
   const [toast, setToast] = useState(null) // transient confirmation
   const toastTimer = useRef(null)
   const lastNudge = useRef(0) // coalesces rapid arrow-key nudges into one undo step
@@ -742,10 +742,7 @@ export default function DumpBoard({
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
-      <CanvasToolbar
-        count={items.length}
-        onExport={(e) => items.length && setExportMenu({ x: e.clientX, y: e.clientY })}
-      />
+      <CanvasToolbar count={items.length} onExport={() => onOpenExport?.()} />
 
       <div
         ref={canvasRef}
@@ -1154,18 +1151,6 @@ export default function DumpBoard({
           onReset={resetView}
         />
       </div>
-
-      <AnimatePresence>
-        {exportMenu && (
-          <ContextMenu
-            key="export-menu"
-            x={exportMenu.x}
-            y={exportMenu.y}
-            items={exportEntries()}
-            onClose={() => setExportMenu(null)}
-          />
-        )}
-      </AnimatePresence>
 
       <AnimatePresence>
         {menu && (

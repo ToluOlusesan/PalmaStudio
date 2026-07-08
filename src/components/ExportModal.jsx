@@ -1,33 +1,43 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X } from '@phosphor-icons/react'
+import { X, CaretDown, Check, Sun, Moon } from '@phosphor-icons/react'
 import { useSessionStore } from '../store/sessionStore.js'
 import { useFocusStore } from '../store/focusStore.js'
 import { saveDataUrl } from '../utils/platform.js'
 import { exportBoardImage, boardToPdfDataUri } from '../utils/captureBoard.js'
 import { renderFocusBoard, focusBoardPdf, processBriefPdf } from '../utils/focusExport.js'
 
-// Unified export: Dump Board, Focus Board, or a multi-page Process Brief PDF.
-// Pre-selects the row matching the view it was opened from (never the Brief).
-export default function ExportModal({ open, onClose, context }) {
-  const placedCount = useFocusStore((s) => s.placed.length)
-  const focusReady = placedCount > 0
+// Unified export. A dropdown picks the target (Dump Board / Focus Board /
+// Process Brief); the controls beneath adapt to it. Nothing is gated or graded —
+// every target is always selectable and exports whatever exists (an empty
+// section simply doesn't appear in the output). Process Brief is PDF-only and
+// carries a light/dark toggle, since it's the one output whose theme isn't just
+// the current view; boards export exactly as the canvas looks now.
+const TARGETS = [
+  { key: 'dumpboard', title: 'Dump Board', sub: 'Full canvas snapshot' },
+  { key: 'focus', title: 'Focus Board', sub: 'Zones and references' },
+  { key: 'brief', title: 'Process Brief', sub: 'Dump Board → Focus → Notes' },
+]
 
+export default function ExportModal({ open, onClose, context }) {
+  // Pre-select the target matching the view it was opened from (Focus from the
+  // Focus view, otherwise the Dump Board); never the Brief.
   const [sel, setSel] = useState(context === 'moodboard' ? 'focus' : 'dumpboard')
   const [format, setFormat] = useState('png')
   const [scale, setScale] = useState(2)
   const [briefTheme, setBriefTheme] = useState('light')
   const [busy, setBusy] = useState(false)
+  const [ddOpen, setDdOpen] = useState(false)
+  const ddRef = useRef(null)
 
-  // Re-seed the selection each time it opens (context pre-selection; never Brief,
-  // and never a disabled row).
   useEffect(() => {
     if (!open) return
-    setSel(context === 'moodboard' && focusReady ? 'focus' : 'dumpboard')
+    setSel(context === 'moodboard' ? 'focus' : 'dumpboard')
     setFormat('png')
     setScale(2)
     setBriefTheme('light')
-  }, [open, context, focusReady])
+    setDdOpen(false)
+  }, [open, context])
 
   useEffect(() => {
     if (!open) return
@@ -35,6 +45,19 @@ export default function ExportModal({ open, onClose, context }) {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [open, onClose])
+
+  // Close the target dropdown on any pointer-down outside it.
+  useEffect(() => {
+    if (!ddOpen) return
+    const onDown = (e) => {
+      if (!ddRef.current?.contains(e.target)) setDdOpen(false)
+    }
+    document.addEventListener('pointerdown', onDown, true)
+    return () => document.removeEventListener('pointerdown', onDown, true)
+  }, [ddOpen])
+
+  const isBrief = sel === 'brief'
+  const target = TARGETS.find((t) => t.key === sel) || TARGETS[0]
 
   const run = async () => {
     setBusy(true)
@@ -94,7 +117,7 @@ export default function ExportModal({ open, onClose, context }) {
         >
           <div className="absolute inset-0" style={{ background: 'rgba(10,10,10,0.2)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }} onClick={onClose} />
           <motion.div
-            className="relative w-full max-w-[420px] rounded-[14px] overflow-hidden border-[0.5px]"
+            className="relative w-full max-w-[400px] rounded-[14px] border-[0.5px]"
             style={{ borderColor: 'var(--border-2)', background: 'var(--surface-modal)' }}
             initial={{ opacity: 0, scale: 0.97 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -103,45 +126,94 @@ export default function ExportModal({ open, onClose, context }) {
           >
             <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b-[0.5px]" style={{ borderColor: 'var(--border)' }}>
               <h2 className="font-serif text-[18px] text-ink leading-none">Export</h2>
-              <button onClick={onClose} className="text-ink-3 hover:text-ink transition-colors -mr-1 p-1">
+              <button onClick={onClose} aria-label="Close" className="text-ink-3 hover:text-ink transition-colors -mr-1 p-1">
                 <X size={15} />
               </button>
             </div>
 
-            <div className="px-3 py-3 flex flex-col gap-1.5">
-              <Row
-                id="dumpboard"
-                title="Dump Board"
-                subtitle="Full canvas snapshot"
-                active={sel === 'dumpboard'}
-                onSelect={() => setSel('dumpboard')}
-                controls={<FormatControls format={format} setFormat={setFormat} scale={scale} setScale={setScale} />}
-              />
-              <Row
-                id="focus"
-                title="Focus Board"
-                subtitle="Zones and references"
-                active={sel === 'focus'}
-                disabled={!focusReady}
-                disabledHint="Add references to Focus first"
-                onSelect={() => setSel('focus')}
-                controls={<FormatControls format={format} setFormat={setFormat} scale={scale} setScale={setScale} />}
-              />
-              <Row
-                id="brief"
-                title="Process Brief"
-                subtitle="Dump Board → Focus → Notes"
-                active={sel === 'brief'}
-                disabled={!focusReady}
-                disabledHint="Add references to Focus first"
-                onSelect={() => setSel('brief')}
-                controls={
-                  <div className="flex items-center gap-3">
-                    <Seg options={[['light', 'Light'], ['dark', 'Dark']]} value={briefTheme} onChange={setBriefTheme} />
-                    <span className="text-[11px] text-ink-3">PDF only</span>
+            <div className="px-5 py-4 flex flex-col gap-4">
+              {/* Target dropdown */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] uppercase tracking-[0.1em] text-ink-3 font-semibold">What to export</label>
+                <div className="relative" ref={ddRef}>
+                  <button
+                    onClick={() => setDdOpen((v) => !v)}
+                    aria-haspopup="listbox"
+                    aria-expanded={ddOpen}
+                    className="w-full flex items-center gap-2.5 text-left rounded-lg px-3 py-2.5 border-[0.5px] bg-surface-2 hover:bg-[var(--sand-hover)] transition-colors"
+                    style={{ borderColor: 'var(--border-2)' }}
+                  >
+                    <span className="min-w-0">
+                      <span className="block text-[13px] text-ink leading-tight">{target.title}</span>
+                      <span className="block text-[11px] text-ink-3 leading-tight">{target.sub}</span>
+                    </span>
+                    <CaretDown size={14} className={`ml-auto text-ink-3 transition-transform ${ddOpen ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {ddOpen && (
+                    <div
+                      role="listbox"
+                      className="pop-in absolute top-[calc(100%+6px)] left-0 right-0 z-20 rounded-[10px] border-[0.5px] p-1.5 flex flex-col gap-0.5"
+                      style={{ borderColor: 'var(--border-2)', background: 'var(--surface-modal)', boxShadow: 'var(--shadow-lifted)' }}
+                    >
+                      {TARGETS.map((t) => (
+                        <button
+                          key={t.key}
+                          role="option"
+                          aria-selected={t.key === sel}
+                          onClick={() => {
+                            setSel(t.key)
+                            setDdOpen(false)
+                          }}
+                          className="flex items-center gap-2.5 text-left rounded-md px-2.5 py-2 hover:bg-[var(--sand-hover)] transition-colors"
+                        >
+                          <span className="w-3.5 shrink-0 text-ink">
+                            {t.key === sel && <Check size={14} weight="bold" />}
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block text-[13px] text-ink leading-tight">{t.title}</span>
+                            <span className="block text-[11px] text-ink-3 leading-tight">{t.sub}</span>
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Controls — adapt to the target */}
+              {isBrief ? (
+                <div className="flex items-end gap-5">
+                  <div className="flex flex-col gap-1.5">
+                    <span className="text-[10px] uppercase tracking-[0.1em] text-ink-3 font-semibold">Format</span>
+                    <span className="inline-flex items-center h-[30px] px-3 text-[12px] text-ink-2 rounded-md border-[0.5px] bg-surface-2" style={{ borderColor: 'var(--border-2)' }}>
+                      PDF
+                    </span>
                   </div>
-                }
-              />
+                  <div className="flex flex-col gap-1.5">
+                    <span className="text-[10px] uppercase tracking-[0.1em] text-ink-3 font-semibold">Output theme</span>
+                    <Seg
+                      options={[
+                        ['light', <span key="l" className="inline-flex items-center gap-1.5"><Sun size={13} /> Light</span>],
+                        ['dark', <span key="d" className="inline-flex items-center gap-1.5"><Moon size={13} /> Dark</span>],
+                      ]}
+                      value={briefTheme}
+                      onChange={setBriefTheme}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-end gap-5">
+                  <div className="flex flex-col gap-1.5">
+                    <span className="text-[10px] uppercase tracking-[0.1em] text-ink-3 font-semibold">Format</span>
+                    <Seg options={[['png', 'PNG'], ['pdf', 'PDF']]} value={format} onChange={setFormat} />
+                  </div>
+                  <div className={`flex flex-col gap-1.5 transition-opacity ${format === 'pdf' ? 'opacity-40 pointer-events-none' : ''}`}>
+                    <span className="text-[10px] uppercase tracking-[0.1em] text-ink-3 font-semibold">Scale</span>
+                    <Seg options={[[1, '1×'], [2, '2×']]} value={scale} onChange={setScale} />
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex items-center justify-end gap-2 px-5 py-3.5 border-t-[0.5px]" style={{ borderColor: 'var(--border)' }}>
@@ -163,41 +235,6 @@ export default function ExportModal({ open, onClose, context }) {
   )
 }
 
-function Row({ title, subtitle, active, disabled, disabledHint, onSelect, controls }) {
-  return (
-    <button
-      onClick={disabled ? undefined : onSelect}
-      disabled={disabled}
-      title={disabled ? disabledHint : undefined}
-      className={`text-left rounded-[8px] px-3 py-2.5 transition-colors ${disabled ? 'opacity-45 cursor-not-allowed' : 'hover:bg-[var(--sand-hover)]'}`}
-      style={{ background: active ? 'rgba(10,10,10,0.04)' : 'transparent' }}
-    >
-      <div className="flex items-center gap-2.5">
-        <span
-          className="shrink-0 grid place-items-center w-4 h-4 rounded-full border-[1.5px]"
-          style={{ borderColor: active ? 'var(--accent)' : 'var(--border-2)' }}
-        >
-          {active && <span className="w-2 h-2 rounded-full" style={{ background: 'var(--accent)' }} />}
-        </span>
-        <div className="min-w-0">
-          <div className="text-[13px] text-ink leading-tight">{title}</div>
-          <div className="text-[11px] text-ink-3 leading-tight">{subtitle}</div>
-        </div>
-      </div>
-      {active && <div className="mt-2 pl-[26px]" onClick={(e) => e.stopPropagation()}>{controls}</div>}
-    </button>
-  )
-}
-
-function FormatControls({ format, setFormat, scale, setScale }) {
-  return (
-    <div className="flex items-center gap-3">
-      <Seg options={[['png', 'PNG'], ['pdf', 'PDF']]} value={format} onChange={setFormat} />
-      <Seg options={[[1, '1×'], [2, '2×']]} value={scale} onChange={setScale} />
-    </div>
-  )
-}
-
 function Seg({ options, value, onChange }) {
   return (
     <div className="inline-flex rounded-md border-[0.5px] overflow-hidden" style={{ borderColor: 'var(--border-2)' }}>
@@ -205,7 +242,7 @@ function Seg({ options, value, onChange }) {
         <button
           key={String(v)}
           onClick={() => onChange(v)}
-          className={`h-6 px-2.5 text-[11px] transition-colors ${i > 0 ? 'border-l-[0.5px]' : ''} ${
+          className={`h-[30px] px-3 text-[12px] transition-colors ${i > 0 ? 'border-l-[0.5px]' : ''} ${
             value === v ? 'bg-accent text-accent-fg font-medium' : 'text-ink-2 hover:bg-[var(--sand-hover)]'
           }`}
           style={{ borderColor: 'var(--border-2)' }}

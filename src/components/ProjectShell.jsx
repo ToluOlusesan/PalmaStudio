@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate, Navigate } from 'react-router-dom'
-import { Check, CircleNotch, Export } from '@phosphor-icons/react'
+import { Check, CircleNotch } from '@phosphor-icons/react'
 import PageView from './PageView.jsx'
 import Topbar from './Topbar.jsx'
 import ModuleTabBar from './ModuleTabBar.jsx'
@@ -66,7 +66,6 @@ export default function ProjectShell() {
 
   const Module = REGISTRY[module]
   const name = project?.name || session?.name || 'Untitled'
-  const canExport = module === 'dumpboard' || module === 'moodboard'
 
   return (
     <PageView>
@@ -75,23 +74,11 @@ export default function ProjectShell() {
           { label: 'Projects', to: '/dashboard' },
           { label: name },
         ]}
-        right={
-          <>
-            <SaveStatus status={status} />
-            {canExport && (
-              <button
-                onClick={() => setExportOpen(true)}
-                className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[12px] text-ink-2 hover:bg-surface-3 hover:text-ink border-[0.5px] border-[var(--border)] transition-colors"
-              >
-                <Export size={14} /> Export
-              </button>
-            )}
-          </>
-        }
+        right={<SaveStatus status={status} />}
       />
       <ModuleTabBar projectId={id} tabs={TABS} />
       <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-        <Module projectId={id} />
+        <Module projectId={id} onOpenExport={() => setExportOpen(true)} />
       </div>
       <ExportModal open={exportOpen} onClose={() => setExportOpen(false)} context={module} />
     </PageView>

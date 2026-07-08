@@ -1,16 +1,22 @@
 import { motion } from 'framer-motion'
-import { CaretRight, Check, X, ImageBroken } from '@phosphor-icons/react'
+import { CaretRight, X, ImageBroken } from '@phosphor-icons/react'
 import { useFocusStore } from '../../store/focusStore.js'
 
 // The Queue — a shelf of references promoted from the Dump Board. Drag a card
-// onto a zone to place it. Placed cards stay here (dimmed, checked) for re-use.
-// Header carries a faint amber wash to read as a holding area, not neutral chrome.
+// onto a zone to place it. Once placed, a reference LEAVES the Queue (it lives in
+// the zone now) so the shelf only ever shows what's still waiting to be placed —
+// removing a member from its zone returns it here. Header carries a faint amber
+// wash to read as a holding area, not neutral chrome.
 export default function QueuePanel({ onClose }) {
   const queue = useFocusStore((s) => s.queue)
   const placed = useFocusStore((s) => s.placed)
   const removeFromQueue = useFocusStore((s) => s.removeFromQueue)
 
-  const isPlaced = (id) => placed.some((p) => p.queueItemId === id)
+  // Only unplaced references show here; placed ones live in their zone. The
+  // queue entry itself is kept (the zone member reads its src from it) — it's
+  // just hidden from the shelf.
+  const placedIds = new Set(placed.map((p) => p.queueItemId))
+  const unplaced = queue.filter((q) => !placedIds.has(q.id))
 
   return (
     <motion.aside
@@ -37,14 +43,13 @@ export default function QueuePanel({ onClose }) {
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto p-2.5">
-        {queue.length === 0 ? (
+        {unplaced.length === 0 ? (
           <p className="text-[12px] text-ink-3 font-light leading-relaxed text-center px-2 mt-8">
-            Send references from the Dump Board to begin.
+            {queue.length ? 'All references placed into zones.' : 'Send references from the Dump Board to begin.'}
           </p>
         ) : (
           <div className="flex flex-col gap-2">
-            {queue.map((q) => {
-              const placedAlready = isPlaced(q.id)
+            {unplaced.map((q) => {
               const missing = (q.type === 'image' || q.type === 'video') && !q.src
               return (
                 <div
@@ -54,11 +59,11 @@ export default function QueuePanel({ onClose }) {
                     e.dataTransfer.setData('application/x-palma-queue', q.id)
                     e.dataTransfer.effectAllowed = 'copy'
                   }}
-                  className={`group relative rounded-[8px] overflow-hidden border-[0.5px] transition-opacity ${
+                  className={`group relative rounded-[8px] overflow-hidden border-[0.5px] ${
                     missing ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'
-                  } ${placedAlready ? 'opacity-55' : 'opacity-100'}`}
+                  }`}
                   style={{ borderColor: 'var(--border-2)', background: 'var(--surface-2)' }}
-                  title={missing ? 'Source missing' : placedAlready ? 'Placed — drag to add again' : 'Drag onto a zone'}
+                  title={missing ? 'Source missing' : 'Drag onto a zone'}
                 >
                   <div className="aspect-[4/3] w-full bg-surface">
                     {missing ? (
@@ -76,15 +81,6 @@ export default function QueuePanel({ onClose }) {
                     )}
                   </div>
 
-                  {placedAlready && (
-                    <span
-                      className="absolute top-1 left-1 grid place-items-center w-4 h-4 rounded-full"
-                      style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}
-                      title="Placed"
-                    >
-                      <Check size={9} weight="bold" />
-                    </span>
-                  )}
                   {missing && (
                     <span className="absolute top-1 left-1 text-[8px] uppercase tracking-wide px-1 py-0.5 rounded bg-[rgba(10,10,10,0.06)] text-ink-3">
                       missing

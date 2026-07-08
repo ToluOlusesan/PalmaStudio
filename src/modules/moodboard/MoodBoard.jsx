@@ -10,14 +10,14 @@ import QueuePanel from './QueuePanel.jsx'
 // Queue rail on the right. Nothing is uploaded here; the canvas is fed only by
 // the Queue (see FocusBoard — no upload affordances). Same paper theme as the
 // Dump Board — no dimming or tint override.
-export default function MoodBoard() {
+export default function MoodBoard({ onOpenExport }) {
   const [queueOpen, setQueueOpen] = useState(true)
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
       <DirectionBar />
       <div className="flex-1 min-h-0 flex">
-        <FocusBoard />
+        <FocusBoard onOpenExport={onOpenExport} />
         <AnimatePresence initial={false}>
           {queueOpen && <QueuePanel key="queue" onClose={() => setQueueOpen(false)} />}
         </AnimatePresence>

@@ -1,5 +1,5 @@
 import { memo, useState, useEffect, useRef } from 'react'
-import { ImageBroken, ChatCircle, Minus, Lock } from '@phosphor-icons/react'
+import { ImageBroken, ChatCircle, Minus, Lock, Target, Check } from '@phosphor-icons/react'
 import { useCanvasStore } from '../../store/canvasStore.js'
 import { useFocusStore } from '../../store/focusStore.js'
 import { snapToGrid } from '../../utils/canvasUtils.js'
@@ -316,18 +316,33 @@ function CanvasItem({ item, selected, panMode, animating, onContextMenu }) {
           />
         )}
 
-        {/* filename label overlay (not on notes). Hover-only to keep the board
-            quiet. Videos label at the TOP so the bottom control bar stays clear;
-            images label at the bottom. */}
-        {item.type !== 'note' && item.label && (
-          <div
-            className={`absolute left-0 right-0 px-2 py-1 text-[10px] truncate pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity ${
-              item.type === 'video' ? 'top-0' : 'bottom-0'
-            }`}
-            style={{ background: 'rgba(10,10,10,0.85)', color: 'rgba(245,245,245,0.75)' }}
+        {/* Send to Focus — a frosted pill shown on hover, mirroring the note
+            colour pill. Images only (Focus is image-only; videos are snapshot
+            scaffolding and never promoted). Once the image has been promoted the
+            pill reads "Sent" so a hovered card confirms its state. Fixed dark ink
+            on a frosted-white pill stays legible over any image in either theme,
+            like the note pill. Replaces the old hover filename label. */}
+        {item.type === 'image' && !item.missing && (
+          <button
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation()
+              useFocusStore.getState().sendToFocus(item)
+            }}
+            title={sent ? 'Sent to Focus' : 'Send to Focus'}
+            aria-label={sent ? 'Sent to Focus' : 'Send to Focus'}
+            className="absolute bottom-1.5 left-1/2 -translate-x-1/2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium text-[#0a0a0a] opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity duration-150"
+            style={{
+              background: 'rgba(255,255,255,0.82)',
+              backdropFilter: 'blur(6px)',
+              WebkitBackdropFilter: 'blur(6px)',
+              border: '0.5px solid var(--border)',
+              boxShadow: 'var(--shadow-soft)',
+            }}
           >
-            {item.label}
-          </div>
+            {sent ? <Check size={13} weight="bold" /> : <Target size={13} />}
+            {sent ? 'Sent to Focus' : 'Send to Focus'}
+          </button>
         )}
 
         {/* Lock badge — small, persistent so a locked item reads as locked. */}
