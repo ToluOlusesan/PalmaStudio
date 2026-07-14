@@ -68,8 +68,10 @@ function roundRect(ctx, x, y, w, h, r) {
 
 // Render a set of zones (+ their members) to a data URL. Used for the whole
 // Focus board and, per-zone, for the Process Brief pages.
-export async function renderFocusBoard(zones, placed, queue, { max = 2400, scale = 2, mime = 'image/png', quality = 0.92 } = {}) {
+export async function renderFocusBoard(zones, placed, queue, { max = 2400, scale = 2, mime = 'image/png', quality = 0.92, theme = 'light' } = {}) {
   if (!zones.length) return null
+  const pal = THEME[theme] || THEME.light
+  const dark = theme === 'dark'
   let minX = Infinity
   let minY = Infinity
   let maxX = -Infinity
@@ -92,7 +94,7 @@ export async function renderFocusBoard(zones, placed, queue, { max = 2400, scale
   canvas.width = Math.max(1, Math.round(bw * s))
   canvas.height = Math.max(1, Math.round(bh * s))
   const ctx = canvas.getContext('2d')
-  ctx.fillStyle = '#fafaf8'
+  ctx.fillStyle = pal.bg
   ctx.fillRect(0, 0, canvas.width, canvas.height)
   const ox = (x) => (x - minX + pad) * s
   const oy = (y) => (y - minY + pad) * s
@@ -107,13 +109,13 @@ export async function renderFocusBoard(zones, placed, queue, { max = 2400, scale
 
   for (const z of zones) {
     roundRect(ctx, ox(z.x), oy(z.y), z.width * s, z.height * s, 12 * s)
-    ctx.fillStyle = zoneFill(z.color, 0.1)
+    ctx.fillStyle = zoneFill(z.color, dark ? 0.2 : 0.1, dark)
     ctx.fill()
     ctx.lineWidth = Math.max(1, 1.5 * s)
-    ctx.strokeStyle = zoneStroke(z.color, 0.35)
+    ctx.strokeStyle = zoneStroke(z.color, dark ? 0.6 : 0.35, dark)
     ctx.stroke()
 
-    ctx.fillStyle = 'rgba(10,10,10,0.62)'
+    ctx.fillStyle = pal.inkText
     ctx.font = `600 ${11 * s}px Inter, system-ui, sans-serif`
     ctx.textBaseline = 'middle'
     ctx.fillText((z.name || '').toUpperCase(), ox(z.x) + PAD * s, oy(z.y) + 15 * s)
@@ -128,7 +130,7 @@ export async function renderFocusBoard(zones, placed, queue, { max = 2400, scale
       const cw = cell.w * s
       const ch = cell.h * s
       roundRect(ctx, cx, cy, cw, ch, 6 * s)
-      ctx.fillStyle = '#ffffff'
+      ctx.fillStyle = pal.card
       ctx.fill()
       if (entry && entry.src && (entry.type === 'image' || entry.type === 'video')) {
         const img = await loadImage(entry.src)
@@ -144,14 +146,14 @@ export async function renderFocusBoard(zones, placed, queue, { max = 2400, scale
           ctx.restore()
         }
       } else if (entry && (entry.type === 'note' || entry.type === 'comment')) {
-        ctx.fillStyle = 'rgba(10,10,10,0.8)'
+        ctx.fillStyle = pal.inkText
         ctx.font = `${11 * s}px Inter, system-ui, sans-serif`
         ctx.textBaseline = 'top'
         const text = (entry.content || entry.label || '').slice(0, 120)
         ctx.fillText(text, cx + 6 * s, cy + 6 * s, cw - 12 * s)
       }
       ctx.lineWidth = Math.max(0.5, 0.5 * s)
-      ctx.strokeStyle = 'rgba(10,10,10,0.12)'
+      ctx.strokeStyle = pal.inkSoft
       roundRect(ctx, cx, cy, cw, ch, 6 * s)
       ctx.stroke()
     }
@@ -164,16 +166,60 @@ export async function renderFocusBoard(zones, placed, queue, { max = 2400, scale
   }
 }
 
-// Focus board as a single-page PDF sized exactly to the rendered image.
-export async function focusBoardPdf(zones, placed, queue, scale = 2) {
-  const img = await renderFocusBoard(zones, placed, queue, { max: scale >= 2 ? 4000 : 2500, mime: 'image/jpeg', quality: 0.92, scale })
-  if (!img) return null
+// Focus board as a styled, multi-page PDF — the same visual language as the
+// Process Brief (paper texture, header rule, footer with the Palma mark), but
+// scoped to the Focus board: ONE landscape page per zone, each a contact-sheet
+// grid of that zone's references followed by its pinned notes and comments. This
+// replaced the old flat single-image dump, which was un-styled and dropped the
+// annotations entirely. `theme` ('light' | 'dark') recolours the whole document.
+export async function focusBoardPdf(zones, placed, queue, notes = [], { theme = 'light' } = {}) {
+  if (!zones.length) return null
+  const dark = theme === 'dark'
   const { jsPDF } = await import('jspdf')
-  const im = await loadImage(img)
-  const w = im?.naturalWidth || 1
-  const h = im?.naturalHeight || 1
-  const pdf = new jsPDF({ orientation: w >= h ? 'landscape' : 'portrait', unit: 'px', format: [w, h] })
-  pdf.addImage(img, 'JPEG', 0, 0, w, h)
+  const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' })
+  const W = pdf.internal.pageSize.getWidth()
+  const H = pdf.internal.pageSize.getHeight()
+  const M = 48
+  const [logo, grain] = await Promise.all([logoPng(dark ? '#f4f4f4' : '#0a0a0a', 120), Promise.resolve(grainTileDataUrl())])
+  const { paper, eyebrow, footer, placeTop, drawAnnotations } = makeBriefChrome({ pdf, W, H, M, dark, logo, grain })
+
+  if (document.fonts?.ready) {
+    try {
+      await document.fonts.ready
+    } catch {
+      /* system sans fallback */
+    }
+  }
+
+  let pageNum = 0
+  let first = true
+  for (const z of zones) {
+    const members = placed.filter((p) => p.zoneId === z.id)
+    // Both pinned notes AND comments for this zone — the whole point of the fix.
+    const anns = notes.filter((n) => n.zoneId === z.id && n.content?.trim())
+    if (!first) pdf.addPage()
+    first = false
+    paper()
+    pageNum++
+    eyebrow(z.name || 'Zone', pageNum)
+
+    const top = M + 28
+    const boxW = W - 2 * M
+    const boxH = H - top - M - 18
+    const maxY = H - M - 18
+    let cursorY = top
+    if (members.length) {
+      const gridBoxH = anns.length ? boxH * 0.6 : boxH
+      cursorY = (await placeTop(await renderMemberGrid(members, queue, { theme }), top, boxW, gridBoxH)) + 20
+    }
+    if (anns.length) drawAnnotations(anns, cursorY, boxW, maxY)
+
+    const parts = []
+    if (members.length) parts.push(`${members.length} reference${members.length === 1 ? '' : 's'}`)
+    if (anns.length) parts.push(`${anns.length} note${anns.length === 1 ? '' : 's'}`)
+    footer(parts.join(' · ') || 'Empty zone')
+  }
+
   return pdf.output('datauristring')
 }
 
@@ -324,6 +370,99 @@ async function logoPng(fill, hPx = 96) {
   return c.toDataURL('image/png')
 }
 
+// Shared page chrome for the Process Brief AND the styled Focus-board export, so
+// the two documents are visually identical: paper-textured background + grain,
+// a header eyebrow with a hairline rule, a footer bar (caption left, Palma mark
+// right), image placement helpers, and the pinned-annotation list. Returns the
+// closures bound to this `pdf`; `dark` recolours everything. Extracted so the
+// Focus export doesn't re-implement (or drift from) the brief's look.
+function makeBriefChrome({ pdf, W, H, M, dark, logo, grain }) {
+  const INK = dark ? 244 : 0 // jsPDF single-value grayscale (0–255)
+  const INK_SOFT = dark ? 180 : 130
+  const RULE = dark ? 90 : 210
+  const [r, g, b] = dark ? [30, 30, 30] : [250, 250, 248]
+  const logoH = 13
+  const logoW = logoH * LOGO_ASPECT
+
+  const paper = () => {
+    pdf.setFillColor(r, g, b)
+    pdf.rect(0, 0, W, H, 'F')
+    paintGrain(pdf, W, H, grain)
+  }
+  const eyebrow = (text, num) => {
+    pdf.setFont('helvetica', 'bold')
+    pdf.setFontSize(8.5)
+    pdf.setTextColor(INK)
+    pdf.text((text || '').toUpperCase(), M, M + 2, { charSpace: 1.8 })
+    if (num != null) pdf.text(String(num), W - M, M + 2, { align: 'right' })
+    pdf.setDrawColor(RULE)
+    pdf.setLineWidth(0.5)
+    pdf.line(M, M + 12, W - M, M + 12)
+  }
+  const footer = (text) => {
+    pdf.setFont('helvetica', 'normal')
+    pdf.setFontSize(8.5)
+    pdf.setTextColor(INK_SOFT)
+    pdf.text(text || '', M, H - M + 6)
+    if (logo) pdf.addImage(logo, 'PNG', W - M - logoW, H - M - logoH + 3, logoW, logoH)
+  }
+  const placeCentered = async (dataUrl) => {
+    if (!dataUrl) return
+    const img = await loadImage(dataUrl)
+    if (!img) return
+    const top = M + 28
+    const boxW = W - 2 * M
+    const boxH = H - top - M - 18
+    const rr = Math.min(boxW / img.width, boxH / img.height, 1.5)
+    const w = img.width * rr
+    const h = img.height * rr
+    pdf.addImage(dataUrl, 'PNG', M + (boxW - w) / 2, top + (boxH - h) / 2, w, h)
+  }
+  const placeTop = async (dataUrl, top, boxW, boxH) => {
+    if (!dataUrl) return top
+    const img = await loadImage(dataUrl)
+    if (!img) return top
+    const rr = Math.min(boxW / img.width, boxH / img.height, 1.5)
+    const w = img.width * rr
+    const h = img.height * rr
+    pdf.addImage(dataUrl, 'PNG', M + (boxW - w) / 2, top, w, h)
+    return top + h
+  }
+  // A zone's pinned notes/comments, listed below its reference grid — each a
+  // short annotation with a small rule marking it (echoing the app's comment
+  // pin). Truncates with a "+N more" line rather than drawing off the page.
+  const drawAnnotations = (items, startY, boxW, maxY) => {
+    let y = startY
+    pdf.setFont('helvetica', 'bold')
+    pdf.setFontSize(8.5)
+    pdf.setTextColor(INK)
+    pdf.text('NOTES', M, y, { charSpace: 1.5 })
+    y += 16
+    for (let i = 0; i < items.length; i++) {
+      pdf.setFont('helvetica', 'normal')
+      pdf.setFontSize(10)
+      const lines = pdf.splitTextToSize(items[i].content.trim(), boxW - 16)
+      const blockH = lines.length * 13 + 10
+      if (y + blockH > maxY) {
+        const remaining = items.length - i
+        pdf.setFont('helvetica', 'italic')
+        pdf.setFontSize(9)
+        pdf.setTextColor(INK_SOFT)
+        pdf.text(`+ ${remaining} more note${remaining === 1 ? '' : 's'}`, M, y + 10)
+        return y + 20
+      }
+      pdf.setDrawColor(RULE)
+      pdf.setLineWidth(2)
+      pdf.line(M, y + 3, M, y + blockH - 6)
+      pdf.setTextColor(INK_SOFT)
+      pdf.text(lines, M + 10, y + 4)
+      y += blockH
+    }
+    return y
+  }
+  return { INK, INK_SOFT, RULE, paper, eyebrow, footer, placeCentered, placeTop, drawAnnotations }
+}
+
 // A4-landscape Process Brief: Cover → Dump Board → one page per zone → Notes
 // (Scratchpad) → a closing "Powered by Palma" page. Every page — including the
 // cover — shares the same paper-textured background and footer bar (logo +
@@ -352,99 +491,11 @@ export async function processBriefPdf({
   const H = pdf.internal.pageSize.getHeight()
   const M = 48
   let pageNum = 1
-  const INK = dark ? 244 : 0 // jsPDF single-value grayscale (0–255)
-  const INK_SOFT = dark ? 180 : 130
-  const RULE = dark ? 90 : 210
 
   const [logo, grain] = await Promise.all([logoPng(dark ? '#f4f4f4' : '#0a0a0a', 120), Promise.resolve(grainTileDataUrl())])
-  const logoH = 13
-  const logoW = logoH * LOGO_ASPECT
-  const [r, g, b] = dark ? [30, 30, 30] : [250, 250, 248]
-
-  // Page background + paper grain — call right after every new page, cover
-  // included, so no page is ever the flat, un-textured odd one out.
-  const paper = () => {
-    pdf.setFillColor(r, g, b)
-    pdf.rect(0, 0, W, H, 'F')
-    paintGrain(pdf, W, H, grain)
-  }
-  const eyebrow = (text, num) => {
-    pdf.setFont('helvetica', 'bold')
-    pdf.setFontSize(8.5)
-    pdf.setTextColor(INK)
-    pdf.text((text || '').toUpperCase(), M, M + 2, { charSpace: 1.8 })
-    if (num != null) pdf.text(String(num), W - M, M + 2, { align: 'right' })
-    pdf.setDrawColor(RULE)
-    pdf.setLineWidth(0.5)
-    pdf.line(M, M + 12, W - M, M + 12)
-  }
-  // Every page's closing bar: a short caption, left, and the Palma mark, right —
-  // the one element every page shares, which is what makes the document cohere.
-  const footer = (text) => {
-    pdf.setFont('helvetica', 'normal')
-    pdf.setFontSize(8.5)
-    pdf.setTextColor(INK_SOFT)
-    pdf.text(text || '', M, H - M + 6)
-    if (logo) pdf.addImage(logo, 'PNG', W - M - logoW, H - M - logoH + 3, logoW, logoH)
-  }
-  // Centre an image within the content area (below the eyebrow, above the footer).
-  const placeCentered = async (dataUrl) => {
-    if (!dataUrl) return
-    const img = await loadImage(dataUrl)
-    if (!img) return
-    const top = M + 28
-    const boxW = W - 2 * M
-    const boxH = H - top - M - 18
-    const rr = Math.min(boxW / img.width, boxH / img.height, 1.5)
-    const w = img.width * rr
-    const h = img.height * rr
-    pdf.addImage(dataUrl, 'PNG', M + (boxW - w) / 2, top + (boxH - h) / 2, w, h)
-  }
-  // Anchor an image at the TOP of a box instead of centring it, returning the y
-  // just below it — used on zone pages so pinned comments get a guaranteed slot
-  // beneath the grid rather than competing with it for the same centred space.
-  const placeTop = async (dataUrl, top, boxW, boxH) => {
-    if (!dataUrl) return top
-    const img = await loadImage(dataUrl)
-    if (!img) return top
-    const rr = Math.min(boxW / img.width, boxH / img.height, 1.5)
-    const w = img.width * rr
-    const h = img.height * rr
-    pdf.addImage(dataUrl, 'PNG', M + (boxW - w) / 2, top, w, h)
-    return top + h
-  }
-  // A zone's pinned comments, listed below its reference grid — each as a short
-  // annotation with a small rule marking it (echoing the app's comment pin).
-  // Gracefully truncates with a "+N more" line rather than drawing off the page.
-  const drawZoneComments = (comments, startY, boxW, maxY) => {
-    let y = startY
-    pdf.setFont('helvetica', 'bold')
-    pdf.setFontSize(8.5)
-    pdf.setTextColor(INK)
-    pdf.text('NOTES', M, y, { charSpace: 1.5 })
-    y += 16
-    for (let i = 0; i < comments.length; i++) {
-      pdf.setFont('helvetica', 'normal')
-      pdf.setFontSize(10)
-      const lines = pdf.splitTextToSize(comments[i].content.trim(), boxW - 16)
-      const blockH = lines.length * 13 + 10
-      if (y + blockH > maxY) {
-        const remaining = comments.length - i
-        pdf.setFont('helvetica', 'italic')
-        pdf.setFontSize(9)
-        pdf.setTextColor(INK_SOFT)
-        pdf.text(`+ ${remaining} more comment${remaining === 1 ? '' : 's'}`, M, y + 10)
-        return y + 20
-      }
-      pdf.setDrawColor(RULE)
-      pdf.setLineWidth(2)
-      pdf.line(M, y + 3, M, y + blockH - 6)
-      pdf.setTextColor(INK_SOFT)
-      pdf.text(lines, M + 10, y + 4)
-      y += blockH
-    }
-    return y
-  }
+  // Shared with the Focus-board export so both documents look identical.
+  const { INK, INK_SOFT, paper, eyebrow, footer, placeCentered, placeTop, drawAnnotations } =
+    makeBriefChrome({ pdf, W, H, M, dark, logo, grain })
 
   // --- Cover — same paper + footer bar as every other page, unlike before. ---
   paper()
@@ -484,8 +535,9 @@ export async function processBriefPdf({
   // --- One page per zone (contact-sheet grid, then its pinned comments) ---
   for (const z of zones) {
     const members = placed.filter((p) => p.zoneId === z.id)
-    const comments = notes.filter((n) => n.type === 'comment' && n.zoneId === z.id && n.content?.trim())
-    if (!members.length && !comments.length) continue
+    // Both pinned notes and comments for this zone (either annotates the board).
+    const anns = notes.filter((n) => n.zoneId === z.id && n.content?.trim())
+    if (!members.length && !anns.length) continue
     pdf.addPage()
     paper()
     pageNum++
@@ -497,16 +549,16 @@ export async function processBriefPdf({
     const maxY = H - M - 18
     let cursorY = top
     if (members.length) {
-      // Leave room below the grid for comments when the zone has any, rather
+      // Leave room below the grid for annotations when the zone has any, rather
       // than letting the grid claim the whole page and centre itself over them.
-      const gridBoxH = comments.length ? boxH * 0.6 : boxH
+      const gridBoxH = anns.length ? boxH * 0.6 : boxH
       cursorY = (await placeTop(await renderMemberGrid(members, queue, { theme }), top, boxW, gridBoxH)) + 20
     }
-    if (comments.length) drawZoneComments(comments, cursorY, boxW, maxY)
+    if (anns.length) drawAnnotations(anns, cursorY, boxW, maxY)
 
     const parts = []
     if (members.length) parts.push(`${members.length} reference${members.length === 1 ? '' : 's'}`)
-    if (comments.length) parts.push(`${comments.length} comment${comments.length === 1 ? '' : 's'}`)
+    if (anns.length) parts.push(`${anns.length} note${anns.length === 1 ? '' : 's'}`)
     footer(parts.join(' · '))
   }
 

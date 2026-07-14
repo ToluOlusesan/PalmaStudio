@@ -26,6 +26,7 @@ export default function ExportModal({ open, onClose, context }) {
   const [format, setFormat] = useState('png')
   const [scale, setScale] = useState(2)
   const [briefTheme, setBriefTheme] = useState('light')
+  const [focusTheme, setFocusTheme] = useState('light')
   const [busy, setBusy] = useState(false)
   const [ddOpen, setDdOpen] = useState(false)
   const ddRef = useRef(null)
@@ -41,6 +42,7 @@ export default function ExportModal({ open, onClose, context }) {
     setFormat('png')
     setScale(2)
     setBriefTheme('light')
+    setFocusTheme('light')
     setDdOpen(false)
     setZoneSel(new Set(useFocusStore.getState().zones.map((z) => z.id)))
   }, [open, context])
@@ -96,11 +98,12 @@ export default function ExportModal({ open, onClose, context }) {
         // Export only the chosen zones (placed/queue are scoped by zone inside).
         const pickedZones = fs.zones.filter((z) => zoneSel.has(z.id))
         if (format === 'pdf') {
-          const uri = await focusBoardPdf(pickedZones, fs.placed, fs.queue, scale)
-          if (uri) await saveDataUrl('focus-board.pdf', uri, [{ name: 'PDF', extensions: ['pdf'] }])
+          // Styled, one-zone-per-page PDF (Process-Brief look) with notes/comments.
+          const uri = await focusBoardPdf(pickedZones, fs.placed, fs.queue, fs.notes, { theme: focusTheme })
+          if (uri) await saveDataUrl(`focus-board-${focusTheme}.pdf`, uri, [{ name: 'PDF', extensions: ['pdf'] }])
         } else {
-          const url = await renderFocusBoard(pickedZones, fs.placed, fs.queue, { scale, max: scale >= 2 ? 4000 : 2500 })
-          if (url) await saveDataUrl('focus-board.png', url, [{ name: 'PNG Image', extensions: ['png'] }])
+          const url = await renderFocusBoard(pickedZones, fs.placed, fs.queue, { scale, max: scale >= 2 ? 4000 : 2500, theme: focusTheme })
+          if (url) await saveDataUrl(`focus-board-${focusTheme}.png`, url, [{ name: 'PNG Image', extensions: ['png'] }])
         }
       } else {
         const uri = await processBriefPdf({
@@ -221,15 +224,32 @@ export default function ExportModal({ open, onClose, context }) {
                   </div>
                 </div>
               ) : (
-                <div className="flex items-end gap-5">
-                  <div className="flex flex-col gap-1.5">
-                    <span className="text-[10px] uppercase tracking-[0.1em] text-ink-3 font-semibold">Format</span>
-                    <Seg options={[['png', 'PNG'], ['pdf', 'PDF']]} value={format} onChange={setFormat} />
+                <div className="flex flex-col gap-4">
+                  <div className="flex items-end gap-5">
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-[10px] uppercase tracking-[0.1em] text-ink-3 font-semibold">Format</span>
+                      <Seg options={[['png', 'PNG'], ['pdf', 'PDF']]} value={format} onChange={setFormat} />
+                    </div>
+                    <div className={`flex flex-col gap-1.5 transition-opacity ${format === 'pdf' ? 'opacity-40 pointer-events-none' : ''}`}>
+                      <span className="text-[10px] uppercase tracking-[0.1em] text-ink-3 font-semibold">Scale</span>
+                      <Seg options={[[1, '1×'], [2, '2×']]} value={scale} onChange={setScale} />
+                    </div>
                   </div>
-                  <div className={`flex flex-col gap-1.5 transition-opacity ${format === 'pdf' ? 'opacity-40 pointer-events-none' : ''}`}>
-                    <span className="text-[10px] uppercase tracking-[0.1em] text-ink-3 font-semibold">Scale</span>
-                    <Seg options={[[1, '1×'], [2, '2×']]} value={scale} onChange={setScale} />
-                  </div>
+                  {/* Focus exports carry a light/dark theme, like the Process Brief;
+                      a PDF is one styled landscape page per zone, notes included. */}
+                  {sel === 'focus' && (
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-[10px] uppercase tracking-[0.1em] text-ink-3 font-semibold">Output theme</span>
+                      <Seg
+                        options={[
+                          ['light', <span key="l" className="inline-flex items-center gap-1.5"><Sun size={13} /> Light</span>],
+                          ['dark', <span key="d" className="inline-flex items-center gap-1.5"><Moon size={13} /> Dark</span>],
+                        ]}
+                        value={focusTheme}
+                        onChange={setFocusTheme}
+                      />
+                    </div>
+                  )}
                 </div>
               )}
 
