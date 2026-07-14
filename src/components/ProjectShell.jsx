@@ -19,7 +19,7 @@ import Scratchpad from '../modules/scratchpad/Scratchpad.jsx'
 const TABS = [
   { key: 'dumpboard', label: 'Dump Board' },
   { key: 'moodboard', label: 'Focus' },
-  { key: 'scratchpad', label: 'Scratchpad' },
+  { key: 'scratchpad', label: 'Notes' },
 ]
 
 const REGISTRY = {

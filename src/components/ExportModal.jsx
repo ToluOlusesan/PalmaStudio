@@ -30,6 +30,11 @@ export default function ExportModal({ open, onClose, context }) {
   const [ddOpen, setDdOpen] = useState(false)
   const ddRef = useRef(null)
 
+  // Which Focus zones to include (default all) — lets you export just the
+  // zone(s) you want to share instead of the whole board every time.
+  const zones = useFocusStore((s) => s.zones)
+  const [zoneSel, setZoneSel] = useState(() => new Set())
+
   useEffect(() => {
     if (!open) return
     setSel(context === 'moodboard' ? 'focus' : 'dumpboard')
@@ -37,7 +42,18 @@ export default function ExportModal({ open, onClose, context }) {
     setScale(2)
     setBriefTheme('light')
     setDdOpen(false)
+    setZoneSel(new Set(useFocusStore.getState().zones.map((z) => z.id)))
   }, [open, context])
+
+  const toggleZone = (id) =>
+    setZoneSel((prev) => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  const allZonesOn = zones.length > 0 && zones.every((z) => zoneSel.has(z.id))
+  const toggleAllZones = () =>
+    setZoneSel(allZonesOn ? new Set() : new Set(zones.map((z) => z.id)))
 
   useEffect(() => {
     if (!open) return
@@ -77,11 +93,13 @@ export default function ExportModal({ open, onClose, context }) {
           if (url) await saveDataUrl('dump-board.png', url, [{ name: 'PNG Image', extensions: ['png'] }])
         }
       } else if (sel === 'focus') {
+        // Export only the chosen zones (placed/queue are scoped by zone inside).
+        const pickedZones = fs.zones.filter((z) => zoneSel.has(z.id))
         if (format === 'pdf') {
-          const uri = await focusBoardPdf(fs.zones, fs.placed, fs.queue, scale)
+          const uri = await focusBoardPdf(pickedZones, fs.placed, fs.queue, scale)
           if (uri) await saveDataUrl('focus-board.pdf', uri, [{ name: 'PDF', extensions: ['pdf'] }])
         } else {
-          const url = await renderFocusBoard(fs.zones, fs.placed, fs.queue, { scale, max: scale >= 2 ? 4000 : 2500 })
+          const url = await renderFocusBoard(pickedZones, fs.placed, fs.queue, { scale, max: scale >= 2 ? 4000 : 2500 })
           if (url) await saveDataUrl('focus-board.png', url, [{ name: 'PNG Image', extensions: ['png'] }])
         }
       } else {
@@ -214,6 +232,41 @@ export default function ExportModal({ open, onClose, context }) {
                   </div>
                 </div>
               )}
+
+              {/* Focus zone picker — choose which zones make it into the export. */}
+              {sel === 'focus' && zones.length > 0 && (
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] uppercase tracking-[0.1em] text-ink-3 font-semibold">Zones</span>
+                    <button onClick={toggleAllZones} className="text-[11px] text-ink-3 hover:text-ink transition-colors">
+                      {allZonesOn ? 'Clear all' : 'Select all'}
+                    </button>
+                  </div>
+                  <div className="flex flex-col gap-0.5 max-h-[168px] overflow-y-auto -mx-1 px-1">
+                    {zones.map((z) => {
+                      const on = zoneSel.has(z.id)
+                      return (
+                        <button
+                          key={z.id}
+                          onClick={() => toggleZone(z.id)}
+                          className="flex items-center gap-2.5 text-left rounded-md px-2 py-1.5 hover:bg-[var(--sand-hover)] transition-colors"
+                        >
+                          <span
+                            className="grid place-items-center w-4 h-4 rounded-[4px] shrink-0 border-[0.5px]"
+                            style={{
+                              borderColor: on ? 'var(--accent)' : 'var(--border-2)',
+                              background: on ? 'var(--accent)' : 'transparent',
+                            }}
+                          >
+                            {on && <Check size={11} weight="bold" style={{ color: 'var(--accent-fg)' }} />}
+                          </span>
+                          <span className="text-[13px] text-ink truncate">{z.name || 'Zone'}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex items-center justify-end gap-2 px-5 py-3.5 border-t-[0.5px]" style={{ borderColor: 'var(--border)' }}>
@@ -222,7 +275,7 @@ export default function ExportModal({ open, onClose, context }) {
               </button>
               <button
                 onClick={run}
-                disabled={busy}
+                disabled={busy || (sel === 'focus' && zoneSel.size === 0)}
                 className="h-8 px-4 rounded-md text-[12px] font-medium bg-accent text-accent-fg hover:opacity-90 disabled:opacity-50 transition-opacity"
               >
                 {busy ? 'Exporting…' : 'Export'}

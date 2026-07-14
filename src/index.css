@@ -79,6 +79,9 @@
   /* Canvas dot-grid colour (Dump + Focus boards) — a token so it inverts in dark. */
   --grid-dot: rgba(10, 10, 10, 0.09);
 
+  /* Connector lines — dark ink on the light board, near-white on the dark one. */
+  --connector: rgba(10, 10, 10, 0.42);
+
   /* Warm-tinted elevation (never grey-black) so shadows feel like paper, not
      glass. Cards rest on shadow-soft; modals use shadow-lifted. */
   --shadow-soft: 0 2px 8px hsla(40, 20%, 20%, 0.08);
@@ -140,6 +143,9 @@
 
   /* Dots go light on black so the grid stays visible. */
   --grid-dot: rgba(255, 255, 255, 0.07);
+
+  /* Connectors go near-white so they read against the pitch-black canvas. */
+  --connector: rgba(255, 255, 255, 0.62);
 
   --shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.6);
   --shadow-lifted: 0 8px 24px rgba(0, 0, 0, 0.78);
@@ -350,24 +356,73 @@ body {
   animation: pop-in 150ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-/* Send-to-Focus — a brief ink-stamp pulse on the canvas item. CSS only (never
-   Framer Motion on canvas items). */
-@keyframes ink-stamp {
-  0% {
-    transform: scale(1);
-    opacity: 1;
-  }
-  40% {
-    transform: scale(0.96);
-    opacity: 0.7;
-  }
-  100% {
-    transform: scale(1);
-    opacity: 1;
+/* Send-to-Focus — a dynamic rainbow rim. A conic gradient rotates around the
+   card's edge, drawn as a border-only ring via a two-layer mask (padding-box
+   knocked out of border-box) so only the rim shows, never a fill. CSS only
+   (never Framer Motion on canvas items). Uses --rim-angle, animated by the
+   registered custom property below so the sweep is a smooth GPU hue-rotate.
+   Two entry points share the ring:
+     .rim-hover  — the pill's own always-available decorative rim (on hover)
+     .sending-to-focus — the one-shot confirmation sweep on the card when sent */
+@property --rim-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+@keyframes rim-spin {
+  to {
+    --rim-angle: 360deg;
   }
 }
-.sending-to-focus {
-  animation: ink-stamp 180ms ease-out forwards;
+@keyframes rim-flash {
+  0% {
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+/* On-send confirmation: rim sweeps around the whole card once, then fades. */
+.sending-to-focus::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 8px;
+  padding: 2px;
+  background: conic-gradient(
+    from var(--rim-angle),
+    #ff3b6b,
+    #ffb03b,
+    #f5e14a,
+    #4ade80,
+    #38bdf8,
+    #a78bfa,
+    #ff3b6b
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+  z-index: 5;
+  animation:
+    rim-spin 1s linear,
+    rim-flash 1s ease-out forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sending-to-focus::after {
+    animation: rim-flash 0.5s ease-out forwards;
+  }
 }
 
 /* Plain fade for backdrops / overlays. */
@@ -430,6 +485,50 @@ body {
 .scratch ol {
   list-style: decimal;
   padding-left: 1.5em;
+}
+/* Checklists — a bullet list tagged .checklist; each item draws a togglable
+   checkbox from pseudo-elements (state is the .checked class, saved in the HTML).
+   Offsets are tuned to the 28px ruled line-height so boxes sit on the rules. */
+.scratch ul.checklist {
+  list-style: none;
+  padding-left: 0.2em;
+}
+.scratch ul.checklist li {
+  position: relative;
+  list-style: none;
+  padding-left: 28px;
+}
+.scratch ul.checklist li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 6px;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1.5px solid var(--border-2);
+  background: var(--surface);
+  box-sizing: border-box;
+  cursor: pointer;
+}
+.scratch ul.checklist li.checked::before {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.scratch ul.checklist li.checked::after {
+  content: '';
+  position: absolute;
+  left: 5.5px;
+  top: 9px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--accent-fg);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.scratch ul.checklist li.checked {
+  color: var(--ink-3);
+  text-decoration: line-through;
 }
 .scratch a {
   color: var(--ink);

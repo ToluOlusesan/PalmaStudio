@@ -94,23 +94,31 @@ export default function CanvasVideo({ item }) {
         className="w-full h-full object-cover pointer-events-none"
       />
 
-      {/* big centre play affordance when paused */}
-      {!playing && (
-        <button
-          onMouseDown={(e) => e.stopPropagation()}
-          onClick={toggle}
-          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 grid place-items-center w-9 h-9 rounded-full"
-          style={{ background: 'rgba(10,10,10,0.72)', color: '#f5f5f5' }}
-          title="Play"
-        >
-          <Play size={16} weight="fill" />
-        </button>
-      )}
+      {/* Big centre affordance: Play when paused (always visible), Pause when
+          playing (revealed on hover). Counter-scaled by --inv-zoom so it stays a
+          constant, crisp size at any board zoom. */}
+      <button
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={toggle}
+        className={`absolute left-1/2 top-1/2 grid place-items-center w-9 h-9 rounded-full transition-opacity duration-150 ${
+          playing ? 'opacity-0 group-hover/v:opacity-100' : 'opacity-100'
+        }`}
+        style={{
+          background: 'rgba(10,10,10,0.72)',
+          color: '#f5f5f5',
+          transform: 'translate(-50%, -50%) scale(var(--inv-zoom, 1))',
+        }}
+        title={playing ? 'Pause' : 'Play'}
+      >
+        {playing ? <Pause size={16} weight="fill" /> : <Play size={16} weight="fill" />}
+      </button>
 
-      {/* control bar — on hover */}
+      {/* control bar — on hover. Counter-scaled (bottom-centre) so its text and
+          controls stay sharp instead of rasterising up with the zoomed canvas. */}
       <div
         onMouseDown={(e) => e.stopPropagation()}
         className="glass-bar absolute left-1.5 right-1.5 bottom-1.5 rounded-[8px] px-2 py-1.5 flex items-center gap-2 opacity-0 group-hover/v:opacity-100 transition-opacity duration-150"
+        style={{ transform: 'scale(var(--inv-zoom, 1))', transformOrigin: 'bottom center' }}
       >
         <button onClick={toggle} className="text-ink hover:text-accent shrink-0" title={playing ? 'Pause' : 'Play'}>
           {playing ? <Pause size={14} weight="fill" /> : <Play size={14} weight="fill" />}

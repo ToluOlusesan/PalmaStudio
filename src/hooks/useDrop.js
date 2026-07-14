@@ -104,6 +104,15 @@ export function useDrop(containerRef) {
       // persist finishes. See landBoardItem in utils/boardOps.js.
       const dropProjectId = useSessionStore.getState().session?.id
 
+      // Tell a browser image drag apart from an OS file drag: a browser hands
+      // over text/html and/or text/uri-list types (the source markup / URL);
+      // an Explorer/Finder drag carries only 'Files'. This holds even when the
+      // image's URL is a blob:/data: one, which a plain http-regex would miss.
+      const types = Array.from(e.dataTransfer.types || [])
+      const droppedUrl = (e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain') || '').trim()
+      const isHttpUrl = /^https?:\/\//i.test(droppedUrl)
+      const fromBrowser = isHttpUrl || types.includes('text/html') || types.includes('text/uri-list')
+
       const files = [...(e.dataTransfer.files || [])]
       if (files.length) {
         files.forEach(async (file, i) => {
@@ -119,11 +128,13 @@ export function useDrop(containerRef) {
           // URL (snapshot() strips those → "missing" after reload — the bug
           // testers hit). A file dragged from Explorer/Finder has a real disk
           // path → reference it via an asset URL. A file dragged from a BROWSER
-          // has no path even on desktop → write the bytes into the project's
-          // assets/ (or embed as a data URL in web) via persistImage. Only
-          // videos without a path keep an object URL (bytes too big to embed);
-          // they reload as a poster placeholder.
-          const diskPath = desktopPathForFile(file)
+          // is backed by a THROWAWAY temp file (Chromium's drag cache), whose
+          // path getPathForFile happily returns — referencing it means the image
+          // disappears when temp is cleared. So for browser drags we ignore that
+          // path and write the bytes into the project's assets/ (persistImage),
+          // exactly like a paste. Only videos without a usable path keep an
+          // object URL (bytes too big to embed); they reload as a poster.
+          const diskPath = fromBrowser ? null : desktopPathForFile(file)
           let src
           let path
           if (diskPath) {
@@ -167,10 +178,10 @@ export function useDrop(containerRef) {
         return
       }
 
-      // Dropped a URL (e.g. from a browser tab) → image reference.
-      const url = e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain')
-      if (url && /^https?:\/\//.test(url)) {
-        landRemoteImage(url, origin)
+      // Dropped just a URL (e.g. from a browser tab, no file) → download the
+      // bytes into the project's assets/ and reference that.
+      if (isHttpUrl) {
+        landRemoteImage(droppedUrl, origin)
       }
     },
     [landRemoteImage, toCanvas]

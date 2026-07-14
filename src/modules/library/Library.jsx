@@ -1,4 +1,4 @@
-import { useMemo, useState, useDeferredValue, memo } from 'react'
+import { useMemo, useState, useDeferredValue, memo, useRef, useEffect } from 'react'
 import { Stack, MagnifyingGlass, ImageBroken, X, Export, VideoCamera, Play } from '@phosphor-icons/react'
 import PageView from '../../components/PageView.jsx'
 import Topbar from '../../components/Topbar.jsx'
@@ -187,14 +187,26 @@ export default function Library() {
 // are what keep a large shelf smooth. Callbacks are the stable useState setters,
 // so memo actually holds.
 const AssetCard = memo(function AssetCard({ asset, onOpen, onExport }) {
+  // Window the image mount: only hold a decoded bitmap while the cell is within
+  // ~800px of the viewport. The observer sits on the .lib-cell (stable geometry
+  // even under content-visibility) so it fires reliably as cells approach.
+  const ref = useRef(null)
+  const [near, setNear] = useState(false)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const io = new IntersectionObserver(([e]) => setNear(e.isIntersecting), { rootMargin: '800px 0px' })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [])
   return (
-    <div className="group lib-cell">
+    <div ref={ref} className="group lib-cell">
       <div
         onClick={() => onOpen(asset)}
         className="relative aspect-square rounded-[8px] overflow-hidden border-[0.5px] border-[var(--border)] bg-surface-2 group-hover:border-[var(--border-2)] transition-colors cursor-zoom-in"
         title={`${asset.label} · ${asset.projectName}`}
       >
-        <AssetThumb asset={asset} />
+        <AssetThumb asset={asset} near={near} />
         <button
           onClick={(e) => {
             e.stopPropagation()
@@ -227,31 +239,39 @@ function PlayBadge() {
 // badge — never a live <video>. A shelf of dozens of <video> elements each
 // spins up a media pipeline, which is the main cause of the Library getting
 // laggy; the Lightbox still plays the real clip on click.
-function AssetThumb({ asset }) {
+//
+// Windowed: the actual <img> is only mounted while its cell is within ~800px of
+// the viewport (IntersectionObserver), and unmounted once it scrolls far away.
+// This bounds how many full-resolution bitmaps stay decoded in memory at once —
+// the real cause of the shelf getting heavy once *every* image had loaded. It
+// pairs with content-visibility (paint skipping) and memoised cells; together a
+// large shelf stays light no matter how far you've scrolled.
+function AssetThumb({ asset, near }) {
   const [broken, setBroken] = useState(false)
   const isVideo = asset.type === 'video'
   const thumbSrc = isVideo ? asset.poster : asset.src
+  const showImg = near && thumbSrc && !broken
 
-  if (!thumbSrc || broken) {
-    return (
-      <div className="w-full h-full grid place-items-center p-2 text-center relative bg-surface">
-        {isVideo ? (
-          <VideoCamera size={20} className="text-ink-3" />
-        ) : (
-          <div>
-            <ImageBroken size={18} className="text-ink-3 mx-auto mb-1" />
-            <div className="text-[9px] text-ink-3 break-all leading-tight">{asset.label}</div>
-          </div>
-        )}
-        {isVideo && <PlayBadge />}
-      </div>
-    )
-  }
-
-  // lazy + async keep a large grid from decoding everything up front.
   return (
-    <div className="w-full h-full relative">
-      <img src={thumbSrc} alt={asset.label} loading="lazy" decoding="async" onError={() => setBroken(true)} className="w-full h-full object-cover" />
+    <div className="w-full h-full relative bg-surface">
+      {showImg ? (
+        <img src={thumbSrc} alt={asset.label} loading="lazy" decoding="async" onError={() => setBroken(true)} className="w-full h-full object-cover" />
+      ) : thumbSrc && !broken ? (
+        // Reserved-but-not-yet-loaded (far from viewport): keep the cell empty so
+        // no bitmap is held. A hairline neutral fill stands in for the image.
+        <div className="w-full h-full" />
+      ) : (
+        <div className="w-full h-full grid place-items-center p-2 text-center">
+          {isVideo ? (
+            <VideoCamera size={20} className="text-ink-3" />
+          ) : (
+            <div>
+              <ImageBroken size={18} className="text-ink-3 mx-auto mb-1" />
+              <div className="text-[9px] text-ink-3 break-all leading-tight">{asset.label}</div>
+            </div>
+          )}
+        </div>
+      )}
       {isVideo && <PlayBadge />}
     </div>
   )

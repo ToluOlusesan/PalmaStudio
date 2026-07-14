@@ -586,6 +586,54 @@ export default function DumpBoard({
       addItems(clip.map((it) => ({ ...it, x: snapToGrid(it.x + 24), y: snapToGrid(it.y + 24) })))
     }
   }
+  // Persist a pasted image blob into the project and land it at a canvas point.
+  const landPastedImageBlob = async (blob, at) => {
+    const folder = useSessionStore.getState().session?.folder || ''
+    const projectId = useSessionStore.getState().session?.id
+    const ext = (blob.type.split('/')[1] || 'png').replace('jpeg', 'jpg')
+    const file = new File([blob], `pasted_${uid('img')}.${ext}`, { type: blob.type })
+    const { src, path } = await persistImage(folder, `assets/${file.name}`, file)
+    const { liveId } = landBoardItem(projectId, {
+      type: 'image', src, path, label: 'pasted',
+      x: snapToGrid(at.x), y: snapToGrid(at.y),
+      width: 200, height: 150, missing: false,
+    })
+    if (liveId) loadImageSize(src).then((d) => d && updateItem(liveId, fitImageBox(d.w, d.h)))
+  }
+
+  // Menu-driven paste (right-click → Paste). Unlike the window `paste` event,
+  // a menu click has no clipboard event, so we reach the OS clipboard via the
+  // async Clipboard API (Electron grants clipboard-read). Palma's own copied
+  // items win when present (the common case); otherwise an OS image lands as an
+  // image and OS text as a note.
+  const pasteFromMenu = async (at) => {
+    if (getItemClipboard().length) return pasteItems(at)
+    const dest = at || centreOfViewport()
+    try {
+      if (navigator.clipboard?.read) {
+        const cbItems = await navigator.clipboard.read()
+        for (const it of cbItems) {
+          const imgType = it.types.find((t) => t.startsWith('image/'))
+          if (imgType) {
+            await landPastedImageBlob(await it.getType(imgType), dest)
+            return
+          }
+        }
+      }
+      const text = (await navigator.clipboard?.readText?.())?.trim()
+      if (text) addItem({ type: 'note', content: text, x: snapToGrid(dest.x), y: snapToGrid(dest.y), width: 200, height: 140 })
+    } catch {
+      // Clipboard read blocked/empty — nothing to paste.
+    }
+  }
+
+  // Copy the current selection to Palma's (and the OS) clipboard.
+  const copySelection = () => {
+    const sel = useCanvasStore.getState().selectedIds
+    if (!sel.length) return
+    copyItems(useCanvasStore.getState().items.filter((it) => sel.includes(it.id)))
+  }
+
   // Relink a missing (or any) item to a file picked from disk — desktop only.
   const relink = async (item) => {
     const p = await pickFile({
@@ -684,9 +732,7 @@ export default function DumpBoard({
           { label: 'Bring to front', icon: ArrowLineUp, onClick: () => bringToFront(menu.item.id) },
           { label: 'Send to back', icon: ArrowLineDown, onClick: () => sendToBack(menu.item.id) },
           { label: 'Copy', icon: Copy, hint: 'Ctrl C', onClick: () => copyItems(menuTargetItems()) },
-          ...(getItemClipboard().length
-            ? [{ label: 'Paste', icon: Clipboard, hint: 'Ctrl V', onClick: () => pasteItems() }]
-            : []),
+          { label: 'Paste', icon: Clipboard, hint: 'Ctrl V', onClick: () => pasteFromMenu() },
           { label: 'Duplicate', icon: Copy, hint: 'Ctrl D', onClick: () => duplicate(menu.item) },
           { label: 'Reset size', icon: ArrowCounterClockwise, onClick: () => updateItem(menu.item.id, DEFAULT_SIZE[menu.item.type] || DEFAULT_SIZE.image) },
           ...(selectedIds.length > 1 && selectedIds.includes(menu.item.id)
@@ -732,9 +778,11 @@ export default function DumpBoard({
       : [
           { label: 'Add note', onClick: () => addNote(menu.bgPos) },
           { label: 'Add comment', onClick: () => addComment(menu.bgPos) },
-          ...(getItemClipboard().length
-            ? [{ label: 'Paste', icon: Clipboard, hint: 'Ctrl V', onClick: () => pasteItems(menu.bgPos) }]
+          { separator: true },
+          ...(selectedIds.length
+            ? [{ label: 'Copy', icon: Copy, hint: 'Ctrl C', onClick: copySelection }]
             : []),
+          { label: 'Paste', icon: Clipboard, hint: 'Ctrl V', onClick: () => pasteFromMenu(menu.bgPos) },
           { separator: true },
           { label: 'Tidy', onClick: handleTidy },
           ...(items.length ? [{ separator: true }, ...exportEntries()] : []),
@@ -776,7 +824,7 @@ export default function DumpBoard({
         <svg className="absolute inset-0 w-full h-full pointer-events-none z-[1]">
           <defs>
             <marker id="palma-arrow" markerWidth="10" markerHeight="10" refX="7" refY="3.5" orient="auto" markerUnits="userSpaceOnUse">
-              <path d="M0,0 L7,3.5 L0,7 Z" fill="rgba(10,10,10,0.45)" />
+              <path d="M0,0 L7,3.5 L0,7 Z" fill="var(--connector)" />
             </marker>
             <marker id="palma-arrow-sel" markerWidth="10" markerHeight="10" refX="7" refY="3.5" orient="auto" markerUnits="userSpaceOnUse">
               <path d="M0,0 L7,3.5 L0,7 Z" fill="var(--accent)" />
@@ -795,18 +843,29 @@ export default function DumpBoard({
             const x2 = panX + p2.x * zoom
             const y2 = panY + p2.y * zoom
             const sel = selectedEdgeId === e.id
+            // Curved connector: a quadratic bowed to one side by a fraction of its
+            // length (capped) so links read as soft arcs, not rigid lines. The end
+            // arrow rides the curve's tangent (marker orient="auto").
+            const dx = x2 - x1
+            const dy = y2 - y1
+            const len = Math.hypot(dx, dy) || 1
+            const bow = Math.min(len * 0.16, 56)
+            const cxp = (x1 + x2) / 2 + (-dy / len) * bow
+            const cyp = (y1 + y2) / 2 + (dx / len) * bow
+            const d = `M ${x1} ${y1} Q ${cxp} ${cyp} ${x2} ${y2}`
             return (
               <g key={e.id}>
-                <line
-                  x1={x1} y1={y1} x2={x2} y2={y2}
-                  stroke="transparent" strokeWidth={16}
+                <path
+                  d={d}
+                  fill="none" stroke="transparent" strokeWidth={16}
                   style={{ pointerEvents: 'stroke', cursor: 'pointer' }}
                   onMouseDown={(ev) => { ev.stopPropagation(); selectEdge(e.id) }}
                   onDoubleClick={(ev) => { ev.stopPropagation(); setEditingEdge(e.id) }}
                 />
-                <line
-                  x1={x1} y1={y1} x2={x2} y2={y2}
-                  stroke={sel ? 'var(--accent)' : 'rgba(10,10,10,0.4)'}
+                <path
+                  d={d}
+                  fill="none"
+                  stroke={sel ? 'var(--accent)' : 'var(--connector)'}
                   strokeWidth={sel ? 2.5 : 1.5}
                   markerEnd={`url(#${sel ? 'palma-arrow-sel' : 'palma-arrow'})`}
                   style={{ pointerEvents: 'none' }}
@@ -845,6 +904,12 @@ export default function DumpBoard({
             willChange: 'transform',
             // Above the paper-grain ::before so cards sit cleanly on the texture.
             zIndex: 1,
+            // Inverse zoom for item chrome (Send-to-Focus pill, note colour pill,
+            // video controls) to counter-scale against, so it stays crisp instead
+            // of rasterising up and blurring when zoomed in. Clamped to ≤1: when
+            // zoomed OUT (zoom<1) we must NOT enlarge the chrome — that made the
+            // pill balloon past a small card — so it just scales down with it.
+            '--inv-zoom': Math.min(1, 1 / zoom),
           }}
         >
           {/* Group frames — a coloured outline around each group's bounding box.

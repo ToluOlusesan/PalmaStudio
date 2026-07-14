@@ -532,7 +532,7 @@ export async function processBriefPdf({
       pdf.setTextColor(INK)
       pdf.text(slice, M, top + 10, { lineHeightFactor: lineH / 11 })
       i += maxLines
-      footer('From the Scratchpad')
+      footer('From Notes')
     }
   }
 

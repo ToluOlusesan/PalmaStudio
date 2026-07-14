@@ -125,10 +125,12 @@ export const useFocusStore = create((set, get) => ({
       }
       return { queue: [...s.queue, entry] }
     })
-    // Replay the stamp regardless (even on a re-send).
+    // Replay the stamp regardless (even on a re-send). Held for the full length
+    // of the rainbow-rim sweep on the card (see .sending-to-focus in index.css)
+    // so the animation isn't cut short — a little longer than the 1s animation.
     set({ stampingId: item.id })
     if (stampTimer) clearTimeout(stampTimer)
-    stampTimer = setTimeout(() => set({ stampingId: null }), 220)
+    stampTimer = setTimeout(() => set({ stampingId: null }), 1050)
     get().persist()
   },
   removeFromQueue: (queueId) => {
@@ -213,11 +215,24 @@ export const useFocusStore = create((set, get) => ({
     })
   },
   deleteZone: (id) => {
-    // Items placed in this zone return to the queue's unplaced state.
-    set((s) => ({
-      zones: s.zones.filter((z) => z.id !== id),
-      placed: s.placed.filter((p) => p.zoneId !== id),
-    }))
+    // Items placed in this zone return to the queue's unplaced state. Its pinned
+    // comments go with it; its pinned notes are set FREE (their zone-relative
+    // offset is baked back into absolute coords) so they survive rather than
+    // orphaning with mis-read coordinates.
+    set((s) => {
+      const zone = s.zones.find((z) => z.id === id)
+      return {
+        zones: s.zones.filter((z) => z.id !== id),
+        placed: s.placed.filter((p) => p.zoneId !== id),
+        notes: s.notes
+          .filter((n) => !(n.type === 'comment' && n.zoneId === id))
+          .map((n) =>
+            n.type === 'note' && n.zoneId === id && zone
+              ? { ...n, zoneId: undefined, x: zone.x + n.x, y: zone.y + n.y }
+              : n
+          ),
+      }
+    })
     get().persist()
   },
 
@@ -271,6 +286,25 @@ export const useFocusStore = create((set, get) => ({
         { id, type: 'note', content: '', x: Math.round(at.x - 90), y: Math.round(at.y - 65), width: 180, height: 130 },
       ],
     }))
+    get().persist()
+    return id
+  },
+  // Note pinned to a zone — like a freestanding note but with a zoneId and an
+  // offset (x/y) from the zone's top-left, so it rides along as the zone moves/
+  // resizes. Dropped just below the header, staggered off any notes already on
+  // this zone. Detaches back to freestanding by dragging it off the zone.
+  addZoneNote: (zoneId) => {
+    const id = uid('fnote')
+    set((s) => {
+      const existing = s.notes.filter((n) => n.type === 'note' && n.zoneId === zoneId).length
+      const off = existing * 20
+      return {
+        notes: [
+          ...s.notes,
+          { id, type: 'note', zoneId, content: '', x: 12 + off, y: 30 + off, width: 180, height: 120 },
+        ],
+      }
+    })
     get().persist()
     return id
   },

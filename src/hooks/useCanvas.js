@@ -70,6 +70,12 @@ export function useCanvas() {
     }
 
     const onWheel = (e) => {
+      // Yield to a scrollable note / text field under the cursor: let the wheel
+      // scroll it natively instead of panning/zooming the board. Only when not
+      // zooming (Ctrl/Cmd still zooms the board) and only if it can actually
+      // scroll. Without this a long note only scrolled via its scrollbar.
+      const sc = e.target.closest?.('[data-wheel-scroll]')
+      if (sc && !e.ctrlKey && !e.metaKey && sc.scrollHeight > sc.clientHeight + 1) return
       // passive:false + preventDefault stops WebView2/WKWebView from applying its
       // own whole-page magnification on top of ours. On Windows this pairs with
       // disabling WebView2's IsPinchZoomEnabled (src-tauri/src/lib.rs) — with the

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   TextB, TextItalic, TextStrikethrough, Code,
-  Quotes, ListBullets, ListNumbers,
+  Quotes, ListBullets, ListNumbers, CheckSquare,
 } from '@phosphor-icons/react'
 import { useSessionStore } from '../../store/sessionStore.js'
 
@@ -70,6 +70,34 @@ export default function Scratchpad() {
     if (text) document.execCommand('insertHTML', false, `<code>${escapeHtml(text)}</code>`)
     onInput()
   }
+  // Checklist — a bullet list tagged `.checklist`; its <li>s render a togglable
+  // checkbox via CSS pseudo-elements (toggled by onCheckboxToggle). A second
+  // press unwraps it (execCommand toggles the list off), like a real task list.
+  const insertChecklist = () => {
+    const el = ref.current
+    if (!el) return
+    el.focus()
+    document.execCommand('insertUnorderedList')
+    let node = window.getSelection()?.anchorNode
+    while (node && node !== el) {
+      if (node.nodeName === 'UL') {
+        node.classList.add('checklist')
+        break
+      }
+      node = node.parentNode
+    }
+    onInput()
+  }
+  // Toggle a checklist item's done state when its checkbox marker is clicked.
+  // Fires on mousedown so we can preventDefault (no caret jump) — a real box tick.
+  const onCheckboxToggle = (e) => {
+    const li = e.target.closest?.('li')
+    if (!li || !li.parentElement?.classList.contains('checklist')) return
+    if (e.clientX - li.getBoundingClientRect().left > 26) return // clicked the text, not the box
+    e.preventDefault()
+    li.classList.toggle('checked')
+    onInput()
+  }
 
   return (
     <div className="flex-1 min-h-0 flex flex-col bg-[var(--bg)]">
@@ -82,6 +110,7 @@ export default function Scratchpad() {
         <ToolBtn icon={Quotes} label="Quote" onClick={() => formatBlock('BLOCKQUOTE')} />
         <ToolBtn icon={ListBullets} label="Bullet list" onClick={() => exec('insertUnorderedList')} />
         <ToolBtn icon={ListNumbers} label="Numbered list" onClick={() => exec('insertOrderedList')} />
+        <ToolBtn icon={CheckSquare} label="Checklist" onClick={insertChecklist} />
       </div>
 
       {/* min-h-0 is required on a flex-1 child inside a column flex container —
@@ -95,7 +124,8 @@ export default function Scratchpad() {
           contentEditable
           suppressContentEditableWarning
           onInput={onInput}
-          data-placeholder="Stream of consciousness, fragments, client notes…  Format with the bar ↑"
+          onMouseDown={onCheckboxToggle}
+          data-placeholder="Stream of consciousness, fragments, client notes, checklists…  Format with the bar ↑"
           spellCheck="false"
           className="scratch scratch-lined w-full min-h-full bg-transparent text-[14px] text-ink"
         />

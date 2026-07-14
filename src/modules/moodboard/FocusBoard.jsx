@@ -24,6 +24,7 @@ export default function FocusBoard({ onOpenExport }) {
   const commitView = useFocusStore((s) => s.commitView)
   const addZone = useFocusStore((s) => s.addZone)
   const addNote = useFocusStore((s) => s.addNote)
+  const addZoneNote = useFocusStore((s) => s.addZoneNote)
   const addZoneComment = useFocusStore((s) => s.addZoneComment)
   const placeItem = useFocusStore((s) => s.placeItem)
   const moveMember = useFocusStore((s) => s.moveMember)
@@ -70,6 +71,28 @@ export default function FocusBoard({ onOpenExport }) {
   const onMemberDrop = (placedId, world) => {
     const t = memberDropTarget(world)
     if (t) moveMember(placedId, t.zoneId, t.index) // else: snap back to its cell
+  }
+
+  // A note that was just dragged: attach it to whatever zone its centre now sits
+  // over (storing zone-relative offset coords), or detach it back to the canvas
+  // if it's over none. Baking absolute↔offset here keeps the note's on-screen
+  // position identical across the attach/detach so it doesn't visibly jump.
+  const resolveNoteZone = (noteId) => {
+    const s = useFocusStore.getState()
+    const n = s.notes.find((x) => x.id === noteId)
+    if (!n) return
+    const cur = n.zoneId ? s.zones.find((z) => z.id === n.zoneId) : null
+    const absX = (cur ? cur.x : 0) + n.x
+    const absY = (cur ? cur.y : 0) + n.y
+    const targetId = zoneAt(absX + (n.width || 180) / 2, absY + (n.height || 120) / 2)
+    if ((targetId || null) === (n.zoneId || null)) return s.commitNotes()
+    const tz = targetId ? s.zones.find((z) => z.id === targetId) : null
+    s.updateNote(noteId, {
+      zoneId: targetId || undefined,
+      x: Math.round(absX - (tz ? tz.x : 0)),
+      y: Math.round(absY - (tz ? tz.y : 0)),
+    })
+    s.commitNotes()
   }
 
   // Space toggles pan affordance (ignored while editing a field).
@@ -234,7 +257,7 @@ export default function FocusBoard({ onOpenExport }) {
             const members = placed.filter((p) => p.zoneId === z.id)
             const lay = zoneLayout(z, members.length)
             return (
-              <Zone key={z.id} zone={z} dragOver={dragOverZone === z.id} lifted={liftZone === z.id} panMode={panMode} count={members.length} onResizeState={setResizingZone} onAddComment={() => addZoneComment(z.id)}>
+              <Zone key={z.id} zone={z} dragOver={dragOverZone === z.id} lifted={liftZone === z.id} panMode={panMode} count={members.length} onResizeState={setResizingZone} onAddNote={() => addZoneNote(z.id)} onAddComment={() => addZoneComment(z.id)}>
                 {members.map((m, i) => {
                   const entry = queueById(m.queueItemId)
                   if (!entry) return null
@@ -244,12 +267,15 @@ export default function FocusBoard({ onOpenExport }) {
             )
           })}
 
-          {/* Freestanding notes — like a Dump Board note, not tied to any zone. */}
+          {/* Notes — freestanding on the canvas, or pinned to a zone (zoneId set),
+              in which case they ride along by rendering at the zone's origin plus
+              their offset. Drag one over/off a zone to attach/detach it. */}
           {notes
             .filter((n) => n.type === 'note')
-            .map((n) => (
-              <FocusNote key={n.id} note={n} panMode={panMode} />
-            ))}
+            .map((n) => {
+              const zone = n.zoneId ? zones.find((z) => z.id === n.zoneId) : null
+              return <FocusNote key={n.id} note={n} zone={zone} panMode={panMode} onDropZone={resolveNoteZone} />
+            })}
 
           {/* Comments pinned to a zone — position tracks the zone automatically
               (offset-based), so it rides along when the zone moves or resizes. */}
@@ -292,7 +318,7 @@ function ZBtn({ icon: Icon, label, onClick, disabled }) {
 
 // A tinted zone container. Drag anywhere on the body to move it; rename/recolour/
 // delete from the header; resize from the corner. Members render inside it.
-function Zone({ zone, dragOver, lifted, panMode, count, onResizeState, onAddComment, children }) {
+function Zone({ zone, dragOver, lifted, panMode, count, onResizeState, onAddNote, onAddComment, children }) {
   const updateZone = useFocusStore((s) => s.updateZone)
   const commitZones = useFocusStore((s) => s.commitZones)
   const deleteZone = useFocusStore((s) => s.deleteZone)
@@ -410,6 +436,14 @@ function Zone({ zone, dragOver, lifted, panMode, count, onResizeState, onAddComm
             className={`grid place-items-center w-4 h-4 rounded transition-colors ${chromeText}`}
           >
             <LayoutIcon size={13} />
+          </button>
+          <button
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={onAddNote}
+            title="Pin a note to this zone"
+            className={`grid place-items-center w-4 h-4 rounded transition-colors ${chromeText}`}
+          >
+            <NotePencil size={13} />
           </button>
           <button
             onMouseDown={(e) => e.stopPropagation()}
@@ -563,12 +597,17 @@ function Member({ placed, entry, cell, panMode, toWorld, onDrop, onLift, instant
 // A freestanding note on the Focus canvas — not tied to any zone. Drag the body
 // to move, corner handle to resize, double-click to edit. Mirrors the Dump
 // Board note's interaction model.
-function FocusNote({ note, panMode }) {
+function FocusNote({ note, zone, panMode, onDropZone }) {
   const updateNote = useFocusStore((s) => s.updateNote)
   const commitNotes = useFocusStore((s) => s.commitNotes)
   const deleteNote = useFocusStore((s) => s.deleteNote)
   const [editing, setEditing] = useState(!note.content)
   const [drag, setDrag] = useState(false)
+
+  // Pinned notes store an offset from their zone's origin; freestanding notes
+  // store absolute canvas coords. Rendered position folds the zone origin in.
+  const baseX = zone ? zone.x : 0
+  const baseY = zone ? zone.y : 0
 
   const startMove = (e) => {
     if (panMode || e.button !== 0 || editing) return
@@ -582,6 +621,8 @@ function FocusNote({ note, panMode }) {
         setDrag(true)
       }
       if (!moved) return
+      // Move in the note's own coordinate space (offset if pinned, absolute if
+      // free) — the zone isn't moving, so a screen delta maps 1:1 either way.
       updateNote(note.id, {
         x: Math.round(start.nx + (ev.clientX - start.x) / zoomNow),
         y: Math.round(start.ny + (ev.clientY - start.y) / zoomNow),
@@ -591,7 +632,8 @@ function FocusNote({ note, panMode }) {
       window.removeEventListener('mousemove', move)
       window.removeEventListener('mouseup', up)
       setDrag(false)
-      if (moved) commitNotes()
+      // Resolve zone attach/detach (which also commits); only if it actually moved.
+      if (moved) onDropZone(note.id)
     }
     window.addEventListener('mousemove', move)
     window.addEventListener('mouseup', up)
@@ -624,8 +666,8 @@ function FocusNote({ note, panMode }) {
       }}
       className="group/note absolute rounded-[8px] bg-surface-2"
       style={{
-        left: note.x,
-        top: note.y,
+        left: baseX + note.x,
+        top: baseY + note.y,
         width: note.width,
         height: note.height,
         border: '0.5px solid var(--border-2)',
@@ -682,6 +724,9 @@ function FocusNote({ note, panMode }) {
 // (click expands it, drag repositions it); expanded → a small card you type
 // into, auto-minimising on blur if it has content, or dropping itself if empty.
 const COMMENT_PIN = 26
+// Annotation colours for zone comments — the same set the Dump Board uses, so a
+// comment reads the same wherever it lives. First is the neutral slate default.
+const COMMENT_COLORS = ['#8A8F98', '#D85C53', '#D89A4E', '#5FA968', '#5B8BC4', '#9B7BC4']
 function ZoneComment({ note, zone, panMode }) {
   const updateNote = useFocusStore((s) => s.updateNote)
   const commitNotes = useFocusStore((s) => s.commitNotes)
@@ -690,6 +735,7 @@ function ZoneComment({ note, zone, panMode }) {
   const [drag, setDrag] = useState(false)
 
   const collapsed = note.collapsed
+  const color = note.color || COMMENT_COLORS[0]
   const w = collapsed ? COMMENT_PIN : note.width
   const h = collapsed ? COMMENT_PIN : note.height
 
@@ -736,12 +782,30 @@ function ZoneComment({ note, zone, panMode }) {
     window.addEventListener('mousemove', move)
     window.addEventListener('mouseup', up)
   }
+  const startResize = (e) => {
+    e.stopPropagation()
+    e.preventDefault()
+    const start = { x: e.clientX, y: e.clientY, w: note.width, h: note.height }
+    const zoomNow = useFocusStore.getState().zoom
+    const move = (ev) =>
+      updateNote(note.id, {
+        width: Math.max(130, Math.round(start.w + (ev.clientX - start.x) / zoomNow)),
+        height: Math.max(84, Math.round(start.h + (ev.clientY - start.y) / zoomNow)),
+      })
+    const up = () => {
+      window.removeEventListener('mousemove', move)
+      window.removeEventListener('mouseup', up)
+      commitNotes()
+    }
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
+  }
 
   return (
     <div
       ref={rootRef}
       onMouseDown={startMove}
-      className="absolute rounded-[6px] overflow-hidden"
+      className="group/zc absolute rounded-[6px]"
       style={{
         left: zone.x + note.x,
         top: zone.y + note.y,
@@ -756,14 +820,14 @@ function ZoneComment({ note, zone, panMode }) {
     >
       {collapsed ? (
         <div
-          className="w-full h-full grid place-items-center"
-          style={{ background: '#8A8F98', color: '#0a0a0a' }}
+          className="w-full h-full grid place-items-center rounded-[6px]"
+          style={{ background: color, color: '#0a0a0a' }}
           title={note.content || 'Comment'}
         >
           <ChatCircle size={13} weight="fill" />
         </div>
       ) : (
-        <div className="w-full h-full flex flex-col" style={{ borderLeft: '3px solid #8A8F98' }}>
+        <div className="w-full h-full flex flex-col overflow-hidden rounded-[6px]" style={{ borderLeft: `3px solid ${color}` }}>
           <button
             onMouseDown={(e) => e.stopPropagation()}
             onClick={() => {
@@ -787,7 +851,32 @@ function ZoneComment({ note, zone, panMode }) {
             }}
             className="flex-1 min-h-0 w-full resize-none bg-transparent p-2.5 pl-3 pr-6 text-[12px] leading-[1.55] text-ink outline-none placeholder:text-ink-3"
           />
+          {/* Colour row — recolour the comment; mirrors the Dump Board comment. */}
+          <div className="shrink-0 flex items-center gap-1.5 px-3 pb-1.5" onMouseDown={(e) => e.stopPropagation()}>
+            {COMMENT_COLORS.map((c) => (
+              <button
+                key={c}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  updateNote(note.id, { color: c })
+                  commitNotes()
+                }}
+                title="Comment colour"
+                aria-label="Set comment colour"
+                className="w-3 h-3 rounded-full transition-transform hover:scale-110"
+                style={{ background: c, boxShadow: c === color ? '0 0 0 1.5px var(--ink), 0 0 0 3px var(--surface-2)' : 'none' }}
+              />
+            ))}
+          </div>
         </div>
+      )}
+
+      {!panMode && !collapsed && (
+        <div
+          onMouseDown={startResize}
+          className="absolute -right-1 -bottom-1 w-3 h-3 rounded-[3px] opacity-0 group-hover/zc:opacity-100 transition-opacity"
+          style={{ background: 'var(--accent)', border: '1px solid var(--surface-canvas)', cursor: 'nwse-resize' }}
+        />
       )}
     </div>
   )

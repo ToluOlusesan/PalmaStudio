@@ -56,11 +56,11 @@ const TIPS = [
   {
     id: 'scratchpad',
     scene: 'scratchpad',
-    label: 'Scratchpad',
+    label: 'Notes',
     title: 'Write the brief',
     bullets: [
       'A per-project notebook, right beside the board.',
-      'Format with the bar: bold, italic, quotes, and lists.',
+      'Format with the bar: bold, italic, quotes, lists, and checklists.',
       'It autosaves and flows into the exported Process Brief.',
     ],
     selector: '[data-tut="scratch-toolbar"]',

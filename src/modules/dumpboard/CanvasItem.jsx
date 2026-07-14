@@ -20,7 +20,7 @@ function CanvasItem({ item, selected, panMode, animating, onContextMenu }) {
   const select = useCanvasStore((s) => s.select)
 
   // Whether this item has been promoted to Focus (shows a corner dot), and a
-  // transient flag that plays the ink-stamp pulse when it's sent.
+  // transient flag that plays the rainbow-rim sweep when it's sent.
   const sent = useFocusStore((s) => s.queue.some((q) => q.sourceItemId === item.id))
   const stamping = useFocusStore((s) => s.stampingId === item.id)
 
@@ -250,7 +250,7 @@ function CanvasItem({ item, selected, panMode, animating, onContextMenu }) {
         e.stopPropagation()
         onContextMenu?.(e, item)
       }}
-      className="absolute group outline-none"
+      className={`absolute group outline-none ${stamping ? 'sending-to-focus' : ''}`}
       style={{
         left: item.x,
         top: item.y,
@@ -272,8 +272,8 @@ function CanvasItem({ item, selected, panMode, animating, onContextMenu }) {
     >
       <div
         className={`card-in w-full h-full overflow-hidden relative bg-surface-2 ${
-          stamping ? 'sending-to-focus' : ''
-        } ${selected || dragging ? '' : 'card-rest'} ${collapsed ? 'rounded-full' : 'rounded-[6px]'}`}
+          selected || dragging ? '' : 'card-rest'
+        } ${collapsed ? 'rounded-full' : 'rounded-[6px]'}`}
         style={{
           border: '0.5px solid var(--border-2)',
           // Selected/dragging take an explicit shadow (ring + lift). At rest the
@@ -316,35 +316,6 @@ function CanvasItem({ item, selected, panMode, animating, onContextMenu }) {
           />
         )}
 
-        {/* Send to Focus — a frosted pill shown on hover, mirroring the note
-            colour pill. Images only (Focus is image-only; videos are snapshot
-            scaffolding and never promoted). Once the image has been promoted the
-            pill reads "Sent" so a hovered card confirms its state. Fixed dark ink
-            on a frosted-white pill stays legible over any image in either theme,
-            like the note pill. Replaces the old hover filename label. */}
-        {item.type === 'image' && !item.missing && (
-          <button
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation()
-              useFocusStore.getState().sendToFocus(item)
-            }}
-            title={sent ? 'Sent to Focus' : 'Send to Focus'}
-            aria-label={sent ? 'Sent to Focus' : 'Send to Focus'}
-            className="absolute bottom-1.5 left-1/2 -translate-x-1/2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium text-[#0a0a0a] opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity duration-150"
-            style={{
-              background: 'rgba(255,255,255,0.82)',
-              backdropFilter: 'blur(6px)',
-              WebkitBackdropFilter: 'blur(6px)',
-              border: '0.5px solid var(--border)',
-              boxShadow: 'var(--shadow-soft)',
-            }}
-          >
-            {sent ? <Check size={13} weight="bold" /> : <Target size={13} />}
-            {sent ? 'Sent to Focus' : 'Send to Focus'}
-          </button>
-        )}
-
         {/* Lock badge — small, persistent so a locked item reads as locked. */}
         {item.locked && (
           <div className="absolute top-1.5 left-1.5 grid place-items-center w-5 h-5 rounded-full bg-[rgba(10,10,10,0.7)] text-[#f5f5f5] pointer-events-none">
@@ -358,6 +329,39 @@ function CanvasItem({ item, selected, panMode, animating, onContextMenu }) {
           </div>
         )}
       </div>
+
+      {/* Send to Focus — a frosted pill shown on hover. Images only (Focus is
+          image-only; videos are snapshot scaffolding and never promoted). Once
+          promoted it reads "Sent". Lives in the OUTER wrapper (a sibling of the
+          card, not inside its overflow-hidden box) so it's never clipped into a
+          cut-off rectangle on a narrow card — it always renders as a full pill.
+          Counter-scaled by --inv-zoom (clamped ≤1) so it stays crisp when zoomed
+          in without ballooning when zoomed out. whitespace-nowrap keeps it one
+          line. */}
+      {item.type === 'image' && !item.missing && !collapsed && (
+        <button
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation()
+            useFocusStore.getState().sendToFocus(item)
+          }}
+          title={sent ? 'Sent to Focus' : 'Send to Focus'}
+          aria-label={sent ? 'Sent to Focus' : 'Send to Focus'}
+          className="absolute bottom-1.5 left-1/2 z-10 inline-flex items-center gap-1.5 whitespace-nowrap px-2.5 py-1 rounded-full text-[11px] font-medium text-[#0a0a0a] opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity duration-150"
+          style={{
+            background: 'rgba(255,255,255,0.82)',
+            backdropFilter: 'blur(6px)',
+            WebkitBackdropFilter: 'blur(6px)',
+            border: '0.5px solid var(--border)',
+            boxShadow: 'var(--shadow-soft)',
+            transform: 'translateX(-50%) scale(var(--inv-zoom, 1))',
+            transformOrigin: 'bottom center',
+          }}
+        >
+          {sent ? <Check size={13} weight="bold" /> : <Target size={13} />}
+          {sent ? 'Sent to Focus' : 'Send to Focus'}
+        </button>
+      )}
 
       {/* Sent-to-Focus marker — a small green dot in the top-right corner. Green
           (not ink) so it reads as an active "promoted" state, not a stray mark. */}
@@ -567,19 +571,25 @@ function NoteItem({ item, editing, setEditing, updateItem }) {
           token, which goes near-white in dark mode and would wash out to
           nothing against these light pastels. */}
       <div className="w-full h-full p-3">
+        {/* data-wheel-scroll lets the canvas wheel handler yield to this element
+            so a long note scrolls on wheel instead of panning/zooming the board. */}
         {editing ? (
           <textarea
             autoFocus
             defaultValue={item.content}
+            data-wheel-scroll
             onBlur={(e) => {
               updateItem(item.id, { content: e.target.value })
               setEditing(false)
             }}
             onMouseDown={(e) => e.stopPropagation()}
-            className="w-full h-full resize-none bg-transparent text-[13px] leading-[1.6] text-[#0a0a0a]"
+            className="w-full h-full resize-none overflow-y-auto bg-transparent text-[13px] leading-[1.6] text-[#0a0a0a]"
           />
         ) : (
-          <div className="w-full h-full overflow-hidden text-[13px] leading-[1.6] text-[#0a0a0a] whitespace-pre-wrap">
+          <div
+            data-wheel-scroll
+            className="w-full h-full overflow-y-auto text-[13px] leading-[1.6] text-[#0a0a0a] whitespace-pre-wrap"
+          >
             {item.content || (
               <span className="font-light text-[rgba(10,10,10,0.4)]">Double-click to write…</span>
             )}
@@ -589,15 +599,20 @@ function NoteItem({ item, editing, setEditing, updateItem }) {
 
       {/* Colour palette — a floating pill at the bottom, shown on hover so a
           resting note stays clean. Click a tint to recolour the note. */}
+      {/* Dark frosted pill (not white) so the pale paper swatches read with clear
+          contrast against it, and counter-scaled by --inv-zoom so it stays crisp
+          and constant-size at any board zoom. */}
       <div
         onMouseDown={(e) => e.stopPropagation()}
-        className="absolute bottom-1.5 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-2 py-1 rounded-full opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity duration-150"
+        className="absolute bottom-1.5 left-1/2 flex items-center gap-1.5 px-2 py-1 rounded-full opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity duration-150"
         style={{
-          background: 'rgba(255,255,255,0.72)',
+          background: 'rgba(24,24,27,0.82)',
           backdropFilter: 'blur(6px)',
           WebkitBackdropFilter: 'blur(6px)',
-          border: '0.5px solid var(--border)',
+          border: '0.5px solid rgba(255,255,255,0.16)',
           boxShadow: 'var(--shadow-soft)',
+          transform: 'translateX(-50%) scale(var(--inv-zoom, 1))',
+          transformOrigin: 'bottom center',
         }}
       >
         {NOTE_COLORS.map((c) => (
@@ -612,8 +627,8 @@ function NoteItem({ item, editing, setEditing, updateItem }) {
             className="w-3.5 h-3.5 rounded-full transition-transform hover:scale-110"
             style={{
               background: c,
-              border: '0.5px solid var(--border-2)',
-              boxShadow: c === tint ? '0 0 0 1.5px var(--ink), 0 0 0 3px #ffffff' : 'none',
+              border: '0.5px solid rgba(0,0,0,0.15)',
+              boxShadow: c === tint ? '0 0 0 1.5px #ffffff, 0 0 0 3px rgba(24,24,27,0.9)' : 'none',
             }}
           />
         ))}

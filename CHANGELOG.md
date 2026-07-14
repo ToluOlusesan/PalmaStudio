@@ -5,6 +5,56 @@ All notable changes to Palma are recorded here. Versions follow
 installer — electron-updater downloads only the changed blocks against the
 previously installed version (via the `.blockmap` published with each build).
 
+## [1.1.6] — 2026-07-14 · beta
+
+### Added
+- **Notes now do checklists.** The Scratchpad is renamed **Notes** and gains a
+  Checklist tool in the format bar — insert a task list and click a box to tick
+  it off. The state saves with the note and rides into the exported Process Brief.
+- **Pick which Focus zones you export.** The Export dialog's Focus Board target
+  now lists every zone with a checkbox (all on by default), so you can share just
+  one updated zone or a new direction instead of the whole board each time.
+- **Preview a project in Trash before you decide.** Each trashed row gets a
+  Preview button that opens its images and video as a grid; click any thumbnail
+  to see it full-size. Reveal in Explorer is here too.
+- **Pin notes to a Focus zone.** Each zone header gets a note button that drops a
+  note pinned to that zone (it rides along as the zone moves/resizes), and any
+  note can be dragged onto a zone to attach — or off it to float free again.
+- **Copy is on the canvas right-click menu**, and Paste there now reaches the OS
+  clipboard (paste a screenshot from the menu, not only with Ctrl+V).
+- **Video player gains a hover Pause**, matching its Play affordance.
+
+### Changed
+- **Send to Focus swaps its blink for a rainbow rim.** Sending an image sweeps
+  an animated colour-shifting rim around the card as confirmation, replacing the
+  old stamp pulse.
+- **Connectors are curved and theme-aware.** Links between items draw as soft
+  arcs instead of straight lines, and turn near-white on the dark canvas (they
+  were a fixed dark ink that vanished in dark mode).
+- **The note colour picker is a dark pill** so the pale paper swatches read with
+  proper contrast.
+- **Focus zone comments are now recolourable and resizable** — a colour row and a
+  corner handle, matching Dump Board comments.
+
+### Fixed
+- **Images dragged from a browser now live in the project.** A web image drag is
+  backed by a throwaway temp file; Palma was referencing that temp path, so the
+  image vanished once temp was cleared. Its bytes are now copied into the
+  project's `assets/` folder on drop, like a paste.
+- **On-canvas chrome stays crisp when you zoom in.** The Send-to-Focus pill, note
+  colour picker, and video controls are counter-scaled to the board zoom, so they
+  no longer blur at high zoom — and no longer balloon past a small card when you
+  zoom out.
+- **The Send-to-Focus pill always renders as a full pill.** It used to be clipped
+  by the card edge on a narrow image into a cut-off rectangle; it now sits above
+  the card and stays a single-line pill.
+- **A long note scrolls on the wheel.** Wheel-scrolling over a note now scrolls
+  the note instead of panning/zooming the board — the scrollbar was the only way
+  before.
+- **The Library stays light no matter how far you scroll.** Off-screen image
+  cells release their decoded bitmaps (windowed mounts), so a fully-loaded shelf
+  doesn't bog down.
+
 ## [1.1.5] — 2026-07-08 · beta
 
 ### Added

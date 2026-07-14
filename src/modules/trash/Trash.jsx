@@ -1,13 +1,36 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { motion } from 'framer-motion'
-import { ArrowCounterClockwise, Trash as TrashIcon, Warning } from '@phosphor-icons/react'
+import { ArrowCounterClockwise, Trash as TrashIcon, Warning, Eye, FolderOpen, X, ImageBroken, VideoCamera, Play } from '@phosphor-icons/react'
 import PageView from '../../components/PageView.jsx'
 import Topbar from '../../components/Topbar.jsx'
 import Button from '../../components/Button.jsx'
 import Modal from '../../components/Modal.jsx'
 import { useProjectStore } from '../../store/projectStore.js'
-import { isDesktop } from '../../utils/platform.js'
+import { isDesktop, isElectron, openPath } from '../../utils/platform.js'
+import { sessionIO } from '../../utils/sessionIO.js'
 import { relativeDate, thumbTint, seededColor } from '../../utils/format.js'
+
+// Collect a trashed project's image/video assets straight from its saved
+// session — a quick 'what was in here' glance without restoring it first.
+// De-duped by source id so the same reference placed twice shows once.
+function projectAssets(projectId) {
+  const session = sessionIO.readSession(projectId)
+  if (!session) return []
+  const items = [
+    ...(session.modules?.dumpboard?.items || []),
+    ...(session.modules?.moodboard?.items || []),
+  ]
+  const seen = new Set()
+  const out = []
+  for (const it of items) {
+    if (it.type !== 'image' && it.type !== 'video') continue
+    const key = it.sourceId || it.id
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(it)
+  }
+  return out
+}
 
 // Trash — soft-deleted projects live here, out of the way of the dashboard.
 // Restore drops one back onto the board; Purge removes it for good, with an
@@ -19,6 +42,7 @@ export default function Trash() {
   const purgeProject = useProjectStore((s) => s.purgeProject)
 
   const [purging, setPurging] = useState(null) // project awaiting purge confirmation
+  const [preview, setPreview] = useState(null) // trashed project whose assets are shown
 
   const trashed = [...projects]
     .filter((p) => p.deleted)
@@ -47,6 +71,7 @@ export default function Trash() {
                 <TrashRow
                   key={p.id}
                   project={p}
+                  onPreview={() => setPreview(p)}
                   onRestore={() => restoreProject(p.id)}
                   onPurge={() => setPurging(p)}
                 />
@@ -64,12 +89,15 @@ export default function Trash() {
           setPurging(null)
         }}
       />
+
+      {preview && <PreviewModal project={preview} onClose={() => setPreview(null)} />}
     </PageView>
   )
 }
 
-function TrashRow({ project, onRestore, onPurge }) {
+function TrashRow({ project, onPreview, onRestore, onPurge }) {
   const swatch = thumbTint(project.thumbColor) || project.palette?.[0] || seededColor(project.name)
+  const canReveal = isElectron() && project.folder
   return (
     <motion.div
       variants={{ hidden: { opacity: 0, y: 6 }, show: { opacity: 1, y: 0 } }}
@@ -86,6 +114,12 @@ function TrashRow({ project, onRestore, onPurge }) {
           {project.folder ? ` · ${project.folder}` : ''}
         </div>
       </div>
+      {canReveal && (
+        <Button variant="ghost" icon={FolderOpen} title="Reveal in Explorer" onClick={() => openPath(project.folder)} />
+      )}
+      <Button icon={Eye} onClick={onPreview}>
+        Preview
+      </Button>
       <Button icon={ArrowCounterClockwise} onClick={onRestore}>
         Restore
       </Button>
@@ -93,6 +127,101 @@ function TrashRow({ project, onRestore, onPurge }) {
         Purge
       </Button>
     </motion.div>
+  )
+}
+
+// Read-only look at what a trashed project holds — an asset grid; click any
+// thumbnail to open it full-size. Purely for posterity, before deciding whether
+// to restore or purge.
+function PreviewModal({ project, onClose }) {
+  const assets = useMemo(() => projectAssets(project.id), [project.id])
+  const [lightbox, setLightbox] = useState(null)
+
+  useEffect(() => {
+    const onKey = (e) => e.key === 'Escape' && (lightbox ? setLightbox(null) : onClose())
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [lightbox, onClose])
+
+  return (
+    <div className="fixed inset-0 z-[140] flex flex-col" style={{ background: 'rgba(8,8,8,0.72)' }} onClick={onClose}>
+      <motion.div
+        className="m-auto w-[min(880px,92vw)] max-h-[86vh] flex flex-col rounded-[14px] border-[0.5px] overflow-hidden"
+        style={{ borderColor: 'var(--border-2)', background: 'var(--surface-modal)' }}
+        initial={{ opacity: 0, scale: 0.98 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.15, ease: [0.25, 0, 0, 1] }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-3.5 border-b-[0.5px] shrink-0" style={{ borderColor: 'var(--border)' }}>
+          <div className="min-w-0">
+            <div className="font-serif text-[16px] text-ink truncate">{project.name}</div>
+            <div className="text-[11px] text-ink-3">
+              {assets.length} {assets.length === 1 ? 'asset' : 'assets'} · deleted {relativeDate(project.deleted)}
+            </div>
+          </div>
+          <button onClick={onClose} aria-label="Close" className="text-ink-3 hover:text-ink transition-colors -mr-1 p-1">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5">
+          {assets.length === 0 ? (
+            <div className="min-h-[30vh] grid place-items-center text-center">
+              <p className="text-[13px] text-ink-3 font-light max-w-[280px]">
+                No images or videos in this project — its notes and layout are still here if you restore it.
+              </p>
+            </div>
+          ) : (
+            <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(120px,1fr))]">
+              {assets.map((a) => (
+                <PreviewThumb key={a.id} asset={a} onOpen={() => setLightbox(a)} />
+              ))}
+            </div>
+          )}
+        </div>
+      </motion.div>
+
+      {lightbox && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-10" style={{ background: 'rgba(6,6,6,0.9)' }} onClick={() => setLightbox(null)}>
+          <div className="max-w-[90vw] max-h-[84vh]" onClick={(e) => e.stopPropagation()}>
+            {lightbox.type === 'image' ? (
+              <img src={lightbox.src} alt={lightbox.label} className="max-w-full max-h-[84vh] object-contain rounded-[6px]" />
+            ) : (
+              <video src={lightbox.src} controls autoPlay className="max-w-full max-h-[84vh] rounded-[6px]" />
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// One preview cell — static thumbnail (poster for videos), falling back to a
+// placeholder when the source didn't survive (e.g. a dead object URL).
+function PreviewThumb({ asset, onOpen }) {
+  const [broken, setBroken] = useState(false)
+  const isVideo = asset.type === 'video'
+  const thumbSrc = isVideo ? asset.poster : asset.src
+  return (
+    <button
+      onClick={onOpen}
+      title={asset.label}
+      className="group relative aspect-square rounded-[8px] overflow-hidden border-[0.5px] border-[var(--border)] bg-surface-2 hover:border-[var(--border-2)] transition-colors cursor-zoom-in"
+    >
+      {!thumbSrc || broken ? (
+        <div className="w-full h-full grid place-items-center bg-surface text-ink-3">
+          {isVideo ? <VideoCamera size={20} /> : <ImageBroken size={18} />}
+        </div>
+      ) : (
+        <img src={thumbSrc} alt={asset.label} loading="lazy" decoding="async" onError={() => setBroken(true)} className="w-full h-full object-cover" />
+      )}
+      {isVideo && (
+        <span className="absolute bottom-1 right-1 grid place-items-center w-5 h-5 rounded-full bg-[rgba(10,10,10,0.6)] pointer-events-none">
+          <Play size={10} weight="fill" className="text-white/90" />
+        </span>
+      )}
+    </button>
   )
 }
 
