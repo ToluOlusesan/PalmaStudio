@@ -99,7 +99,11 @@ export default function ExportModal({ open, onClose, context }) {
         const pickedZones = fs.zones.filter((z) => zoneSel.has(z.id))
         if (format === 'pdf') {
           // Styled, one-zone-per-page PDF (Process-Brief look) with notes/comments.
-          const uri = await focusBoardPdf(pickedZones, fs.placed, fs.queue, fs.notes, { theme: focusTheme })
+          const uri = await focusBoardPdf(pickedZones, fs.placed, fs.queue, fs.notes, {
+            theme: focusTheme,
+            projectName: sess?.name || 'Untitled',
+            direction: fs.direction,
+          })
           if (uri) await saveDataUrl(`focus-board-${focusTheme}.pdf`, uri, [{ name: 'PDF', extensions: ['pdf'] }])
         } else {
           const url = await renderFocusBoard(pickedZones, fs.placed, fs.queue, { scale, max: scale >= 2 ? 4000 : 2500, theme: focusTheme })
@@ -241,6 +245,7 @@ export default function ExportModal({ open, onClose, context }) {
                     <div className="flex flex-col gap-1.5">
                       <span className="text-[10px] uppercase tracking-[0.1em] text-ink-3 font-semibold">Output theme</span>
                       <Seg
+                        full
                         options={[
                           ['light', <span key="l" className="inline-flex items-center gap-1.5"><Sun size={13} /> Light</span>],
                           ['dark', <span key="d" className="inline-flex items-center gap-1.5"><Moon size={13} /> Dark</span>],
@@ -308,16 +313,22 @@ export default function ExportModal({ open, onClose, context }) {
   )
 }
 
-function Seg({ options, value, onChange }) {
+// `full` stretches the control to the row width, splitting the options evenly —
+// used for a control that sits alone on its own row (the Focus output theme), so
+// it fills the space instead of hugging its content with a wide empty gap beside.
+function Seg({ options, value, onChange, full = false }) {
   return (
-    <div className="inline-flex rounded-md border-[0.5px] overflow-hidden" style={{ borderColor: 'var(--border-2)' }}>
+    <div
+      className={`${full ? 'flex w-full' : 'inline-flex'} rounded-md border-[0.5px] overflow-hidden`}
+      style={{ borderColor: 'var(--border-2)' }}
+    >
       {options.map(([v, label], i) => (
         <button
           key={String(v)}
           onClick={() => onChange(v)}
           className={`h-[30px] px-3 text-[12px] transition-colors ${i > 0 ? 'border-l-[0.5px]' : ''} ${
-            value === v ? 'bg-accent text-accent-fg font-medium' : 'text-ink-2 hover:bg-[var(--sand-hover)]'
-          }`}
+            full ? 'flex-1 flex items-center justify-center' : ''
+          } ${value === v ? 'bg-accent text-accent-fg font-medium' : 'text-ink-2 hover:bg-[var(--sand-hover)]'}`}
           style={{ borderColor: 'var(--border-2)' }}
         >
           {label}

@@ -14,11 +14,12 @@ previously installed version (via the `.blockmap` published with each build).
 - **Pick which Focus zones you export.** The Export dialog's Focus Board target
   now lists every zone with a checkbox (all on by default), so you can share just
   one updated zone or a new direction instead of the whole board each time.
-- **The Focus Board PDF is now a styled, one-zone-per-page document** in the same
-  visual language as the Process Brief (paper texture, header rule, Palma footer)
-  — each zone gets its own landscape page with a clean reference grid and its
-  pinned notes and comments listed beneath, which the old flat export dropped. It
-  carries a Light / Dark toggle, and the Focus PNG export follows the theme too.
+- **The Focus Board PDF is now a styled document** in the same visual language as
+  the Process Brief: a cover page, then one landscape page per zone with a clean,
+  filled reference grid and the zone's pinned notes and comments listed beneath —
+  the old flat export was unstyled and dropped the annotations. Reference images
+  sit larger/more legible, and it carries a Light / Dark toggle (the Focus PNG
+  export follows the theme too).
 - **Preview a project in Trash before you decide.** Each trashed row gets a
   Preview button that opens its images and video as a grid; click any thumbnail
   to see it full-size. Reveal in Explorer is here too.
@@ -53,6 +54,8 @@ previously installed version (via the `.blockmap` published with each build).
 - **The Send-to-Focus pill always renders as a full pill.** It used to be clipped
   by the card edge on a narrow image into a cut-off rectangle; it now sits above
   the card and stays a single-line pill.
+- **Export dialog: the Output theme (Light / Dark) selector fills its row** rather
+  than hugging its content and leaving a wide empty gap beside it.
 - **A long note scrolls on the wheel.** Wheel-scrolling over a note now scrolls
   the note instead of panning/zooming the board — the scrollbar was the only way
   before.

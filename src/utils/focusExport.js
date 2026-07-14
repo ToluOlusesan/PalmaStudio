@@ -172,7 +172,7 @@ export async function renderFocusBoard(zones, placed, queue, { max = 2400, scale
 // grid of that zone's references followed by its pinned notes and comments. This
 // replaced the old flat single-image dump, which was un-styled and dropped the
 // annotations entirely. `theme` ('light' | 'dark') recolours the whole document.
-export async function focusBoardPdf(zones, placed, queue, notes = [], { theme = 'light' } = {}) {
+export async function focusBoardPdf(zones, placed, queue, notes = [], { theme = 'light', projectName, direction } = {}) {
   if (!zones.length) return null
   const dark = theme === 'dark'
   const { jsPDF } = await import('jspdf')
@@ -181,7 +181,7 @@ export async function focusBoardPdf(zones, placed, queue, notes = [], { theme = 
   const H = pdf.internal.pageSize.getHeight()
   const M = 48
   const [logo, grain] = await Promise.all([logoPng(dark ? '#f4f4f4' : '#0a0a0a', 120), Promise.resolve(grainTileDataUrl())])
-  const { paper, eyebrow, footer, placeTop, drawAnnotations } = makeBriefChrome({ pdf, W, H, M, dark, logo, grain })
+  const { paper, eyebrow, footer, coverPage, placeTop, drawAnnotations } = makeBriefChrome({ pdf, W, H, M, dark, logo, grain })
 
   if (document.fonts?.ready) {
     try {
@@ -191,14 +191,15 @@ export async function focusBoardPdf(zones, placed, queue, notes = [], { theme = 
     }
   }
 
-  let pageNum = 0
-  let first = true
+  // Cover page, same as the Process Brief opens with — then one page per zone.
+  coverPage('Focus Board', projectName, direction)
+
+  let pageNum = 1
   for (const z of zones) {
     const members = placed.filter((p) => p.zoneId === z.id)
     // Both pinned notes AND comments for this zone — the whole point of the fix.
     const anns = notes.filter((n) => n.zoneId === z.id && n.content?.trim())
-    if (!first) pdf.addPage()
-    first = false
+    pdf.addPage()
     paper()
     pageNum++
     eyebrow(z.name || 'Zone', pageNum)
@@ -209,8 +210,9 @@ export async function focusBoardPdf(zones, placed, queue, notes = [], { theme = 
     const maxY = H - M - 18
     let cursorY = top
     if (members.length) {
+      // 'cover' zooms each reference to fill its cell so they read larger.
       const gridBoxH = anns.length ? boxH * 0.6 : boxH
-      cursorY = (await placeTop(await renderMemberGrid(members, queue, { theme }), top, boxW, gridBoxH)) + 20
+      cursorY = (await placeTop(await renderMemberGrid(members, queue, { theme, fit: 'cover' }), top, boxW, gridBoxH)) + 20
     }
     if (anns.length) drawAnnotations(anns, cursorY, boxW, maxY)
 
@@ -225,8 +227,11 @@ export async function focusBoardPdf(zones, placed, queue, notes = [], { theme = 
 
 // A clean contact-sheet grid of a zone's members — used for the Process Brief's
 // per-zone pages (tidier than rendering the literal zone box).
-export async function renderMemberGrid(members, queue, { scale = 2, max = 2200, theme = 'light' } = {}) {
+export async function renderMemberGrid(members, queue, { scale = 2, max = 2200, theme = 'light', fit = 'contain' } = {}) {
   const pal = THEME[theme] || THEME.light
+  // 'cover' fills each cell (references read larger / more zoomed-in, lightly
+  // cropped); 'contain' letterboxes them uncropped (the Process Brief default).
+  const drawFit = fit === 'cover' ? drawCover : drawContain
   const items = members.map((m) => queue.find((q) => q.id === m.queueItemId)).filter(Boolean)
   if (!items.length) return null
   const n = items.length
@@ -273,7 +278,7 @@ export async function renderMemberGrid(members, queue, { scale = 2, max = 2200, 
         roundRect(ctx, x, y, w, h, 8 * s)
         ctx.clip()
         try {
-          drawContain(ctx, img, x, y, w, h)
+          drawFit(ctx, img, x, y, w, h)
         } catch {
           /* tainted */
         }
@@ -428,6 +433,36 @@ function makeBriefChrome({ pdf, W, H, M, dark, logo, grain }) {
     pdf.addImage(dataUrl, 'PNG', M + (boxW - w) / 2, top, w, h)
     return top + h
   }
+  // The document's cover: paper + the small mark, an eyebrow label, a big serif
+  // title, a short rule, and an optional subtitle (the project's direction),
+  // closed by the shared footer. Shared so the Process Brief and the Focus-board
+  // export open the same way.
+  const coverPage = (label, title, subtitle) => {
+    paper()
+    if (logo) pdf.addImage(logo, 'PNG', M, M + 6, 22 * LOGO_ASPECT, 22)
+    pdf.setFont('helvetica', 'bold')
+    pdf.setFontSize(8.5)
+    pdf.setTextColor(INK)
+    pdf.text((label || '').toUpperCase(), M, M + 48, { charSpace: 2 })
+    pdf.setFont('times', 'bold')
+    pdf.setFontSize(40)
+    pdf.setTextColor(INK)
+    const titleLines = pdf.splitTextToSize(title || 'Untitled', W - 2 * M)
+    const titleY = H * 0.4
+    pdf.text(titleLines, M, titleY)
+    let cy = titleY + titleLines.length * 42 + 6
+    pdf.setDrawColor(INK)
+    pdf.setLineWidth(1)
+    pdf.line(M, cy, M + 64, cy)
+    cy += 28
+    if (subtitle) {
+      pdf.setFont('helvetica', 'normal')
+      pdf.setFontSize(13)
+      pdf.setTextColor(INK_SOFT)
+      pdf.text(pdf.splitTextToSize(subtitle, W - 2 * M), M, cy)
+    }
+    footer(`Created on: ${new Date().toLocaleDateString()}`)
+  }
   // A zone's pinned notes/comments, listed below its reference grid — each a
   // short annotation with a small rule marking it (echoing the app's comment
   // pin). Truncates with a "+N more" line rather than drawing off the page.
@@ -460,7 +495,7 @@ function makeBriefChrome({ pdf, W, H, M, dark, logo, grain }) {
     }
     return y
   }
-  return { INK, INK_SOFT, RULE, paper, eyebrow, footer, placeCentered, placeTop, drawAnnotations }
+  return { INK, INK_SOFT, RULE, paper, eyebrow, footer, coverPage, placeCentered, placeTop, drawAnnotations }
 }
 
 // A4-landscape Process Brief: Cover → Dump Board → one page per zone → Notes
@@ -494,34 +529,11 @@ export async function processBriefPdf({
 
   const [logo, grain] = await Promise.all([logoPng(dark ? '#f4f4f4' : '#0a0a0a', 120), Promise.resolve(grainTileDataUrl())])
   // Shared with the Focus-board export so both documents look identical.
-  const { INK, INK_SOFT, paper, eyebrow, footer, placeCentered, placeTop, drawAnnotations } =
+  const { INK, INK_SOFT, paper, eyebrow, footer, coverPage, placeCentered, placeTop, drawAnnotations } =
     makeBriefChrome({ pdf, W, H, M, dark, logo, grain })
 
-  // --- Cover — same paper + footer bar as every other page, unlike before. ---
-  paper()
-  if (logo) pdf.addImage(logo, 'PNG', M, M + 6, 22 * LOGO_ASPECT, 22)
-  pdf.setFont('helvetica', 'bold')
-  pdf.setFontSize(8.5)
-  pdf.setTextColor(INK)
-  pdf.text('PROCESS BRIEF', M, M + 48, { charSpace: 2 })
-  pdf.setFont('times', 'bold')
-  pdf.setFontSize(40)
-  pdf.setTextColor(INK)
-  const titleLines = pdf.splitTextToSize(projectName || 'Untitled', W - 2 * M)
-  const titleY = H * 0.4
-  pdf.text(titleLines, M, titleY)
-  let cy = titleY + titleLines.length * 42 + 6
-  pdf.setDrawColor(INK)
-  pdf.setLineWidth(1)
-  pdf.line(M, cy, M + 64, cy)
-  cy += 28
-  if (direction) {
-    pdf.setFont('helvetica', 'normal')
-    pdf.setFontSize(13)
-    pdf.setTextColor(INK_SOFT)
-    pdf.text(pdf.splitTextToSize(direction, W - 2 * M), M, cy)
-  }
-  footer(`Created on: ${new Date().toLocaleDateString()}`)
+  // --- Cover ---
+  coverPage('Process Brief', projectName, direction)
 
   // --- The Dump ---
   const dumpImg = await renderBoard(dumpItems, { max: 2400, mime: 'image/png', maxScale: 2, includeText: true, edges: dumpEdges, theme })
