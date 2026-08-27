@@ -47,3 +47,13 @@ export function checkMissing(item) {
   if (item.type === 'image' || item.type === 'video') return !item.src
   return false
 }
+
+// Is this canvas item an animated GIF? Checked against the on-disk path first
+// (the plain truth), then the src — which may be a palma://-wrapped path or an
+// inline data: URL. Drives the frame-accurate GIF transport on the board.
+export function isGifItem(item) {
+  if (!item || item.type !== 'image' || item.missing) return false
+  const src = item.src || ''
+  if (src.toLowerCase().startsWith('data:image/gif')) return true
+  return extOf(item.path || '') === 'gif' || extOf(src) === 'gif' || extOf(item.label || '') === 'gif'
+}

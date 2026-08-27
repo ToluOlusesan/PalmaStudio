@@ -6,16 +6,17 @@ import { snapToGrid, captureVideoPoster, loadImageSize, fitImageBox } from '../u
 import { persistImage, persistRemoteImage, desktopPathForFile, toAssetUrl } from '../utils/platform.js'
 import { uid } from '../utils/id.js'
 import { landBoardItem } from '../utils/boardOps.js'
+import { imageUrlFromTransfer, imageUrlFromHtml, isDirectImageUrl } from '../utils/imageSource.js'
 
-const directImageUrl = (text) =>
-  /^https?:\/\/\S+\.(png|jpe?g|gif|webp|avif|svg|bmp)(\?\S*)?$/i.test(text || '') ? text : ''
-
+// The image URL a paste is offering: the copied markup's <img> (srcset-aware,
+// so we take the biggest size the page published) or a bare URL on the
+// clipboard. Preferred over the clipboard's own bitmap wherever it exists —
+// the bitmap is only ever the size the page was rendering.
 const clipboardImageUrl = (e) => {
+  const fromHtml = imageUrlFromHtml(e.clipboardData?.getData('text/html') || '')
+  if (fromHtml) return fromHtml
   const text = (e.clipboardData?.getData('text/plain') || '').trim()
-  if (directImageUrl(text)) return text
-  const html = e.clipboardData?.getData('text/html') || ''
-  const m = /<img\b[^>]*\bsrc=(["']?)(https?:\/\/[^"'\s>]+)\1/i.exec(html)
-  return m?.[2] || ''
+  return isDirectImageUrl(text) ? text : ''
 }
 
 // Drag-and-drop intake for the canvas. Accepts image/video files and dropped
@@ -48,28 +49,37 @@ export function useDrop(containerRef) {
   // moving selected canvas items), which would wrongly flash "Drop to add".
   const hasFiles = (e) => Array.from(e.dataTransfer?.types || []).includes('Files')
 
-  const landRemoteImage = useCallback((url, at) => {
-    const folder = useSessionStore.getState().session?.folder || ''
-    const projectId = useSessionStore.getState().session?.id
-    persistRemoteImage(folder, url, `pasted_${uid('img')}`).then(async (saved) => {
-      const src = saved?.src || url
-      const path = saved?.path || url
-      const { liveId } = landBoardItem(projectId, {
-        type: 'image',
-        src,
-        path,
-        label: basename(url) || 'pasted',
-        x: snapToGrid(at.x),
-        y: snapToGrid(at.y),
-        width: 180,
-        height: 226,
-        missing: false,
+  // Download a remote image into the project and land it. Resolves false when
+  // the host served nothing and `requireDownload` is set — so a caller that
+  // still holds the dragged bytes (handleDrop) can fall back to those rather
+  // than landing a dead remote reference.
+  const landRemoteImage = useCallback(
+    (url, at, { requireDownload = false } = {}) => {
+      const folder = useSessionStore.getState().session?.folder || ''
+      const projectId = useSessionStore.getState().session?.id
+      return persistRemoteImage(folder, url, `pasted_${uid('img')}`).then(async (saved) => {
+        if (!saved && requireDownload) return false
+        const src = saved?.src || url
+        const path = saved?.path || url
+        const { liveId } = landBoardItem(projectId, {
+          type: 'image',
+          src,
+          path,
+          label: basename(url) || 'pasted',
+          x: snapToGrid(at.x),
+          y: snapToGrid(at.y),
+          width: 180,
+          height: 226,
+          missing: false,
+        })
+        if (liveId) {
+          loadImageSize(src).then((d) => d && updateItem(liveId, fitImageBox(d.w, d.h)))
+        }
+        return true
       })
-      if (liveId) {
-        loadImageSize(src).then((d) => d && updateItem(liveId, fitImageBox(d.w, d.h)))
-      }
-    })
-  }, [updateItem])
+    },
+    [updateItem]
+  )
 
   const handleDragEnter = useCallback((e) => {
     if (!hasFiles(e)) return
@@ -114,7 +124,7 @@ export function useDrop(containerRef) {
       const fromBrowser = isHttpUrl || types.includes('text/html') || types.includes('text/uri-list')
 
       const files = [...(e.dataTransfer.files || [])]
-      if (files.length) {
+      const landFiles = () => {
         files.forEach(async (file, i) => {
           const kind = isImageType(file.type)
             ? 'image'
@@ -175,6 +185,24 @@ export function useDrop(containerRef) {
             captureVideoPoster(src).then((poster) => poster && updateItem(liveId, { poster }))
           }
         })
+      }
+
+      // A browser image drag hands over BOTH a temp file and the source markup.
+      // The temp file is only ever the pixels the page was DISPLAYING — on an
+      // image-grid site that's a downscaled tile, so saving it means saving the
+      // thumbnail. The markup still carries the real URL (and its srcset), which
+      // the downloader can upgrade to the host's original. So: try the URL
+      // first, and fall back to the dragged bytes only if nothing downloads.
+      const remoteUrl = fromBrowser ? imageUrlFromTransfer(e.dataTransfer) : ''
+      if (remoteUrl) {
+        landRemoteImage(remoteUrl, origin, { requireDownload: files.length > 0 }).then((ok) => {
+          if (!ok) landFiles()
+        })
+        return
+      }
+
+      if (files.length) {
+        landFiles()
         return
       }
 
@@ -187,51 +215,68 @@ export function useDrop(containerRef) {
     [landRemoteImage, toCanvas]
   )
 
+  // Land raw clipboard bitmap bytes (a screenshot, or a copied image whose
+  // source URL we couldn't reach). persistImage writes them into the project's
+  // assets/ on the desktop and embeds them as a data: URL in web — either way a
+  // stable ref that survives a reload, never a session-scoped blob: URL.
+  const landPastedFile = useCallback(
+    (file, mime, at) => {
+      const ext = ((mime || '').split('/')[1] || 'png').replace('jpeg', 'jpg')
+      const name = `pasted_${uid('img')}.${ext}`
+      const folder = useSessionStore.getState().session?.folder || ''
+      // Captured now, before the async persist — see landBoardItem.
+      const pasteProjectId = useSessionStore.getState().session?.id
+      persistImage(folder, `assets/${name}`, file).then(({ src, path }) => {
+        const { liveId } = landBoardItem(pasteProjectId, {
+          type: 'image',
+          src,
+          path,
+          label: 'pasted',
+          x: snapToGrid(at.x),
+          y: snapToGrid(at.y),
+          width: 200,
+          height: 150,
+          missing: false,
+        })
+        if (liveId) {
+          loadImageSize(src).then((d) => d && updateItem(liveId, fitImageBox(d.w, d.h)))
+        }
+      })
+    },
+    [updateItem]
+  )
+
   // Clipboard paste of an image (screenshots) → canvas item, centred-ish.
-  // A pasted screenshot has no file on disk to re-reference. persistImage writes
-  // it into the project's assets/ under Tauri (referenced via an asset:// URL)
-  // or embeds it as a data: URL in web — either way a stable ref that survives a
-  // reload, never the session-scoped blob: URL snapshot() would drop.
   const handlePaste = useCallback(
     (e, center) => {
       const at = center ? toCanvas(center.x, center.y) : { x: 80, y: 80 }
       const items = [...(e.clipboardData?.items || [])]
 
       // 1. An image on the clipboard (a screenshot, a copied image) → image item.
+      //    "Copy image" in a browser puts BOTH the rendered bitmap and the page
+      //    markup on the clipboard. The markup names the source URL, which can
+      //    be upgraded to the host's original, so it wins when it's there; the
+      //    bitmap (always only as big as the page drew it) is the fallback.
       const imgItem = items.find((it) => it.type.startsWith('image/'))
+      const markupUrl = clipboardImageUrl(e)
+      if (imgItem && markupUrl) {
+        const file = imgItem.getAsFile()
+        landRemoteImage(markupUrl, at, { requireDownload: !!file }).then((ok) => {
+          if (!ok && file) landPastedFile(file, imgItem.type, at)
+        })
+        return true
+      }
       if (imgItem) {
         const file = imgItem.getAsFile()
-        if (!file) return true
-        const ext = (imgItem.type.split('/')[1] || 'png').replace('jpeg', 'jpg')
-        const name = `pasted_${uid('img')}.${ext}`
-        const folder = useSessionStore.getState().session?.folder || ''
-        // Captured now, before the async persist — see landBoardItem.
-        const pasteProjectId = useSessionStore.getState().session?.id
-        persistImage(folder, `assets/${name}`, file).then(({ src, path }) => {
-          const { liveId } = landBoardItem(pasteProjectId, {
-            type: 'image',
-            src,
-            path,
-            label: 'pasted',
-            x: snapToGrid(at.x),
-            y: snapToGrid(at.y),
-            width: 200,
-            height: 150,
-            missing: false,
-          })
-          if (liveId) {
-            loadImageSize(src).then((d) => d && updateItem(liveId, fitImageBox(d.w, d.h)))
-          }
-        })
+        if (file) landPastedFile(file, imgItem.type, at)
         return true
       }
 
       // 2. Text on the clipboard. A direct link to an image → image reference;
       //    any other URL or plain text → a note holding it. Returns whether we
       //    consumed the paste so callers can fall through to other handlers.
-      const imageUrl = clipboardImageUrl(e)
-      if (imageUrl) {
-        landRemoteImage(imageUrl, at)
+      if (markupUrl) {
+        landRemoteImage(markupUrl, at)
         return true
       }
 
@@ -248,7 +293,7 @@ export function useDrop(containerRef) {
       })
       return true
     },
-    [addItem, landRemoteImage, toCanvas, updateItem]
+    [addItem, landPastedFile, landRemoteImage, toCanvas]
   )
 
   return {

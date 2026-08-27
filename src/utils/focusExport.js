@@ -11,7 +11,7 @@ const MAX_AREA = 130e6
 // Theme palette for Process Brief renders (contact-sheet grid + PDF chrome).
 const THEME = {
   light: { bg: '#fafaf8', card: '#ffffff', ink: '#0a0a0a', inkSoft: 'rgba(10,10,10,0.12)', inkText: 'rgba(10,10,10,0.82)' },
-  dark: { bg: '#1e1e1e', card: '#262626', ink: '#f4f4f4', inkSoft: 'rgba(244,244,244,0.16)', inkText: 'rgba(244,244,244,0.85)' },
+  dark: { bg: '#151515', card: '#262626', ink: '#f4f4f4', inkSoft: 'rgba(244,244,244,0.16)', inkText: 'rgba(244,244,244,0.85)' },
 }
 
 function loadImage(src) {

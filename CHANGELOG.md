@@ -5,6 +5,112 @@ All notable changes to Palma are recorded here. Versions follow
 installer — electron-updater downloads only the changed blocks against the
 previously installed version (via the `.blockmap` published with each build).
 
+## [1.3.0] — 2026-08-27 · beta
+
+### Added
+- **Storyboard — a new board for putting shots in order.** Where the Dump Board
+  is a pile and Focus is a curation, the Storyboard is a *sequence*. It sits as
+  its own tab beside them.
+  - **Send from the Dump Board with `Ctrl B`** (or right-click → Send to
+    Storyboard) and each reference lands as the next shot. There's no queue to
+    place from — a sequence already knows where a new shot goes.
+  - **Every panel is the same frame shape**, set once for the board: 16:9,
+    2.39:1, 4:3, 1:1, 4:5 or 9:16. Dropping a picture into a fixed frame is a
+    framing decision, so **Ctrl-drag inside a panel** slides the picture and
+    **Ctrl-scroll** zooms it — the same crop model the Dump Board gained in
+    1.2.0. Framing is stored proportionally, so changing the board's frame shape
+    or panel size carries your compositions over without ever distorting the
+    picture.
+  - **Drag a panel between any two others to reorder**; a caret shows where it
+    will land and everything renumbers on drop. Panel order *is* the sequence,
+    so the numbers can never disagree with what you're looking at.
+  - **Action, camera and duration** under each panel, with the durations adding
+    up to a **runtime** in the header — a board that says how long the piece
+    runs, not just what it looks like.
+  - **Empty panels** for blocking a story out before you have the references,
+    plus duplicate (for a held shot) and delete on each panel.
+  - Panels are sized together with **S / M / L** rather than individually — on a
+    storyboard, one shot being bigger than another says something you probably
+    didn't mean.
+
+  Animatic playback, scene bands and the storyboard PDF are next; this release
+  is the board itself.
+
+### Fixed
+- **A module's debounced edit can no longer be lost by closing the window.**
+  Stores that batch their own writes can now register a flush hook, so the
+  save-on-close drains them before serialising instead of writing a slice that
+  hadn't caught up yet.
+
+## [1.2.1] — 2026-08-27 · beta
+
+### Changed
+- **Resize from the sides, not just a corner.** Cards now carry six handles —
+  four corners plus a bar on the left and right edge — and each one pins the
+  side opposite it, so dragging the left handle grows the card leftwards instead
+  of shuffling the whole thing sideways. With only a bottom-right handle the
+  top-left corner was always the anchor, which made sizing something against its
+  neighbour a two-step job: resize, then drag back. The three gestures are
+  unchanged on every handle — drag to scale, Ctrl-drag to crop, Shift-drag to
+  stretch — and cropping from the left or top now shifts the crop to match, so
+  the picture stays exactly where it was on the board while the frame closes in
+  around it. Top and bottom centre are left free for the connector dot and the
+  Send-to-Focus pill.
+
+## [1.2.0] — 2026-08-27 · beta
+
+### Added
+- **GIFs, with a real transport.** Drop a GIF on the board and it plays — with a
+  Play/Pause button and a frame scrubber, because a browser `<img>` gives you no
+  handle on a GIF at all. Palma decodes the file itself and paints the frames, so
+  Pause holds the exact frame you were looking at, Play carries on from there,
+  and you can scrub to the frame you actually wanted. The Capture button drops
+  that frame onto the board as its own still, the way the video player does.
+  Paused stays paused across a restart, and the card carries a small GIF badge.
+- **Scale and crop, the way Figma does it.** Dragging a card's corner handle now
+  **scales** it — aspect locked, so a reference never gets stretched by accident.
+  **Ctrl-drag** the handle to **crop**: the frame closes in while the picture
+  stays exactly the size it was. **Ctrl-drag the picture itself** to slide it
+  inside the crop and choose what you keep. Shift-drag is the old free resize,
+  for when you do mean to squash something. A label names the gesture while you
+  drag, "Reset crop" is on the right-click menu, and crops ride into the board's
+  PNG/PDF export and the dashboard thumbnail. (The Focus board is unaffected —
+  it frames references whole, by design, so a Dump Board crop doesn't follow an
+  image there.)
+
+### Changed
+- **Zoom rebuilt.** The range opens up to **10%–800%** (was 25%–400%), and the
+  +/− buttons and keys step through round percentages instead of drifting by
+  0.2 into 90%, 110%, 130%. The percentage is now a **menu**: Zoom to fit, Zoom
+  to selection, and the levels worth jumping to. **Ctrl 0** is 100%, **Ctrl 1**
+  fits the board, **Ctrl 2** fits the selection, and **+ / −** step — the
+  shortcuts the cheat-sheet has been promising all along. Commanded zooms glide
+  over ~180ms instead of teleporting; the wheel and pinch still track your hand
+  1:1 and cancel a glide in flight. Fit leaves room for the floating tool dock
+  and zoom pill rather than tucking content under them.
+- **Dark mode goes deeper — the base is now `#151515`**, with the panel, card
+  and hover greys re-cut around it. The canvas dot grid and shadows are nudged to
+  suit the darker ground.
+
+### Fixed
+- **Images from Pinterest (and anywhere else) now arrive at full resolution.**
+  What a page *shows* is rarely the file it *has* — a Pinterest grid tile is a
+  236px crop of the upload, Twitter serves `name=small`, Tumblr a `_500`. Drops,
+  pastes and Clipper saves now read the source markup's `srcset`, rewrite the URL
+  to the host's original, and download that, falling back down the size ladder
+  and finally to the URL you were handed. Requests also carry a browser user
+  agent and referer, which is what several image CDNs (pinimg included) were
+  refusing before — so clips that previously failed outright now land.
+- **Ctrl+0 / Ctrl+= / Ctrl+− no longer magnify the whole app.** Chromium's
+  default menu claimed those accelerators for page zoom and won, scaling the
+  sidebar and chrome along with the board and leaving the window stuck at
+  whatever factor it reached. The menu is gone and the page scale is pinned,
+  which also repairs a window already stuck from an earlier build.
+- **The Send-to-Focus pill no longer sits on top of a GIF's scrubber** — on a GIF
+  card it moves to the top edge, clear of the transport.
+- **"Reset size" restores a picture's real proportions** instead of forcing it
+  into a fixed rectangle, and clears any crop.
+
 ## [1.1.6] — 2026-07-14 · beta
 
 ### Added

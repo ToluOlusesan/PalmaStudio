@@ -8,9 +8,10 @@
 // this endpoint. Extension requests carry a chrome-extension:// origin (or
 // none), which we allow.
 const http = require('http')
+const { downloadBestImage } = require('./imageSource.cjs')
 
 const PORT = 47821
-const MAX_BYTES = 25 * 1024 * 1024
+const MAX_BYTES = 64 * 1024 * 1024
 
 function isBlockedOrigin(origin) {
   return !!origin && /^https?:\/\//i.test(origin)
@@ -22,14 +23,14 @@ function cors(res, origin) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
 }
 
+// The extension hands us the URL of the image the page was DISPLAYING, which on
+// an image-grid site is a downscaled thumbnail. downloadBestImage rewrites it to
+// the host's full-size original first and only falls back to what we were given
+// (see imageSource.cjs), so a clip lands at usable resolution.
 async function downloadImage(url) {
-  const r = await fetch(url)
-  if (!r.ok) return null
-  const contentType = r.headers.get('content-type') || 'image/jpeg'
-  if (!contentType.startsWith('image/')) return null
-  const buf = Buffer.from(await r.arrayBuffer())
-  if (buf.length > MAX_BYTES) return null
-  return `data:${contentType};base64,${buf.toString('base64')}`
+  const got = await downloadBestImage(url, { maxBytes: MAX_BYTES })
+  if (!got) return null
+  return `data:${got.contentType};base64,${got.buffer.toString('base64')}`
 }
 
 // getWindow() returns the BrowserWindow to deliver clips to (or null).

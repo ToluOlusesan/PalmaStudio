@@ -3,6 +3,8 @@
 // cropped, z-ordered) over the monochrome base. Produces a genuine miniature of
 // the layout for dashboard cards.
 
+import { cropSourceRect } from './cropGeometry.js'
+
 const BG = '#f5f5f5'
 const MAX = 480 // longest edge of the output thumbnail
 
@@ -11,7 +13,7 @@ const MAX = 480 // longest edge of the output thumbnail
 // via the `theme` option, used by the Process Brief's dark export.
 const THEME = {
   light: { bg: '#f5f5f5', ink: '#0a0a0a', inkSoft: 'rgba(10,10,10,0.12)', card: '#ffffff' },
-  dark: { bg: '#1e1e1e', ink: '#f4f4f4', inkSoft: 'rgba(244,244,244,0.16)', card: '#262626' },
+  dark: { bg: '#151515', ink: '#f4f4f4', inkSoft: 'rgba(244,244,244,0.16)', card: '#262626' },
 }
 
 // Safety ceilings for the export canvas — kept under Chromium's limits so a
@@ -27,6 +29,15 @@ function loadImage(src) {
     img.onerror = () => res(null)
     img.src = src
   })
+}
+
+// Draw `img` into the box (dx,dy,dw,dh) exactly as the board shows it: through
+// the item's own crop when it has one, otherwise centre-cover (which is what an
+// uncropped card is doing anyway).
+function drawItemImage(ctx, img, it, dx, dy, dw, dh) {
+  const rect = cropSourceRect(it, img.width, img.height)
+  if (rect) return ctx.drawImage(img, rect.sx, rect.sy, rect.sw, rect.sh, dx, dy, dw, dh)
+  drawCover(ctx, img, dx, dy, dw, dh)
 }
 
 // Draw `img` to cover the box (dx,dy,dw,dh) — crops overflow like object-cover.
@@ -294,7 +305,7 @@ export async function renderBoard(
       const img = await loadImage(it.src)
       if (!img) continue
       try {
-        drawCover(ctx, img, dx, dy, dw, dh)
+        drawItemImage(ctx, img, it, dx, dy, dw, dh)
       } catch {
         /* tainted (cross-origin) image — skip it */
       }

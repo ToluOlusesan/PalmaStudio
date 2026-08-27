@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { useSessionStore } from '../store/sessionStore.js'
 import { useCanvasStore } from '../store/canvasStore.js'
 import { useFocusStore } from '../store/focusStore.js'
+import { useStoryboardStore } from '../store/storyboardStore.js'
 import { useProjectStore } from '../store/projectStore.js'
 import { captureBoard } from '../utils/captureBoard.js'
 
@@ -49,10 +50,13 @@ export function useSession(projectId, moduleKey) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, moduleKey])
 
-  // Keep the Focus board (zones / queue / placed) hydrated for the open project
-  // so Send-to-Focus and the "sent" indicator work even from the Dump Board.
+  // Keep the Focus board (zones / queue / placed) and the Storyboard hydrated for
+  // the open project, so Send-to-Focus / Send-to-Storyboard and the "sent"
+  // indicators work even while the Dump Board is the visible module.
   useEffect(() => {
-    if (session) useFocusStore.getState().loadFromSession(session)
+    if (!session) return
+    useFocusStore.getState().loadFromSession(session)
+    useStoryboardStore.getState().loadFromSession(session)
   }, [session?.id])
 
   // Autosave: subscribe to canvas mutations on canvas-backed modules.

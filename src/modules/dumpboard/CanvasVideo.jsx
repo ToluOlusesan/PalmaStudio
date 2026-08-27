@@ -14,7 +14,7 @@ const fmt = (t = 0) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padSt
 // now (no separate window). Under Tauri the full-res PNG is also written to the
 // project's assets/frames/ folder. Controls stop propagation so the item still
 // drags by its body.
-export default function CanvasVideo({ item }) {
+export default function CanvasVideo({ item, mediaClassName, mediaStyle }) {
   const ref = useRef(null)
   const addItem = useCanvasStore((s) => s.addItem)
   const [playing, setPlaying] = useState(false)
@@ -91,7 +91,8 @@ export default function CanvasVideo({ item }) {
         onTimeUpdate={(e) => setTime(e.target.currentTime)}
         onLoadedMetadata={(e) => setDuration(e.target.duration)}
         onEnded={() => setPlaying(false)}
-        className="w-full h-full object-cover pointer-events-none"
+        className={mediaClassName || 'w-full h-full object-cover pointer-events-none'}
+        style={mediaStyle}
       />
 
       {/* Big centre affordance: Play when paused (always visible), Pause when

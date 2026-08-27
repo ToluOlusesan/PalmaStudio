@@ -2,12 +2,13 @@
 // Tauri Rust commands in src-tauri/src/lib.rs so the React frontend runs
 // unchanged. CommonJS (.cjs) so it loads cleanly even though package.json is
 // "type": "module".
-const { app, BrowserWindow, ipcMain, dialog, protocol, shell } = require('electron')
+const { app, BrowserWindow, Menu, ipcMain, dialog, protocol, shell } = require('electron')
 const { autoUpdater } = require('electron-updater')
 const fsp = require('fs/promises')
 const path = require('path')
 const windowState = require('./windowState.cjs')
 const { startClipServer } = require('./clipServer.cjs')
+const { downloadBestImage } = require('./imageSource.cjs')
 
 const isDev = !!process.env.ELECTRON_DEV
 
@@ -84,6 +85,35 @@ function createWindow() {
   windowState.track(win)
   if (saved.maximized) win.maximize()
 
+  // The board owns Ctrl+0 / Ctrl+= / Ctrl+- (zoom to 100% / in / out). Chromium's
+  // default menu claims those same accelerators for PAGE zoom and wins, which
+  // magnified the entire UI — chrome, sidebar and all — instead of the canvas,
+  // and left the window stuck at whatever factor you'd nudged it to. The menu is
+  // hidden anyway (frameless window), so remove it outright and pin the page
+  // scale to 1, repairing any window already stuck from an earlier build.
+  win.webContents.on('did-finish-load', () => {
+    win.webContents.setZoomFactor(1)
+    win.webContents.setVisualZoomLevelLimits(1, 1)
+  })
+  // Chromium's own Ctrl+wheel page zoom isn't menu-driven, so dropping the menu
+  // didn't disable it — it only removed the Ctrl+0 that used to undo it. Snap
+  // straight back to 100%: an accidental Ctrl+wheel over the sidebar or a list
+  // would otherwise leave the whole UI magnified with no way out but a restart.
+  // The canvas and storyboard consume their own Ctrl+wheel before it gets here.
+  win.webContents.on('zoom-changed', () => {
+    win.webContents.setZoomFactor(1)
+  })
+
+  // Removing the menu also takes the devtools accelerator with it, so put that
+  // back for development.
+  if (isDev) {
+    win.webContents.on('before-input-event', (_e, input) => {
+      const devtools =
+        input.key === 'F12' || (input.control && input.shift && input.key.toLowerCase() === 'i')
+      if (input.type === 'keyDown' && devtools) win.webContents.toggleDevTools()
+    })
+  }
+
   // Keep the renderer's maximise/restore icon in sync with the actual state.
   win.on('maximize', () => win.webContents.send('window-maximized', true))
   win.on('unmaximize', () => win.webContents.send('window-maximized', false))
@@ -102,6 +132,8 @@ ipcMain.on('window-toggle-maximize', (e) => {
 ipcMain.on('window-close', (e) => BrowserWindow.fromWebContents(e.sender)?.close())
 
 app.whenReady().then(() => {
+  Menu.setApplicationMenu(null) // see createWindow: frees Ctrl+0/+/- for the canvas
+
   // Serve a local file by absolute path encoded into the palma:// URL.
   // The Access-Control-Allow-Origin header is essential: the colour-extraction
   // features (Mood Distiller, Skin Panel, Project Skin, board thumbnails) load
@@ -279,24 +311,19 @@ ipcMain.handle('delete-path', async (_e, target) => {
 
 // Download an internet image through the native process. Renderer fetches are
 // often blocked by CORS/hotlink rules, while pasted URL images need to become
-// durable project assets instead of brittle remote references.
+// durable project assets instead of brittle remote references. downloadBestImage
+// upgrades the URL to the largest version the host serves first (a Pinterest
+// grid thumbnail is a 236px crop of the real upload) — see imageSource.cjs.
 ipcMain.handle('download-image-url', async (_e, rawUrl) => {
   try {
     const url = new URL(rawUrl)
     if (!['http:', 'https:'].includes(url.protocol)) return null
-    const res = await fetch(url.toString(), {
-      headers: {
-        'user-agent': 'Palma/1.0',
-        accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-      },
-    })
-    if (!res.ok) return null
-    const contentType = res.headers.get('content-type') || 'image/png'
-    if (!contentType.toLowerCase().startsWith('image/')) return null
-    const buf = Buffer.from(await res.arrayBuffer())
+    const got = await downloadBestImage(url.toString())
+    if (!got) return null
     return {
-      dataUrl: `data:${contentType.split(';')[0]};base64,${buf.toString('base64')}`,
-      ext: extFromMime(contentType),
+      dataUrl: `data:${got.contentType};base64,${got.buffer.toString('base64')}`,
+      ext: extFromMime(got.contentType),
+      url: got.url,
     }
   } catch {
     return null

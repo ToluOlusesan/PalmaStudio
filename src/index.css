@@ -89,8 +89,8 @@
 }
 
 /* ------------------------------------------------------------------ *
- * Dark theme — a soft "true dark" (bg #1e1e1e), not pitch black. User-
- * controlled + persisted (the sidebar switch), applied app-wide via the
+ * Dark theme — a deep near-black (bg #151515), user-controlled and
+ * persisted (the sidebar switch), applied app-wide via the
  * `dark` class on <html>. Overrides BOTH the Tailwind @theme utilities
  * (--color-*) and the canonical inline vars (--bg, --ink…) so utilities and
  * inline styles agree — this is why the whole app (not just the canvas) flips.
@@ -98,38 +98,38 @@
 :root.dark {
   color-scheme: dark;
 
-  --color-bg: #1e1e1e;
-  --color-surface: #242424;
-  --color-surface-2: #2c2c2c;
-  --color-surface-3: #383838;
-  --color-card: #2c2c2c;
-  --color-card-alt: #1e1e1e;
+  --color-bg: #151515;
+  --color-surface: #1b1b1b;
+  --color-surface-2: #212121;
+  --color-surface-3: #2e2e2e;
+  --color-card: #212121;
+  --color-card-alt: #151515;
   --color-ink: #f4f4f4;
   --color-ink-2: rgba(255, 255, 255, 0.6);
   --color-ink-3: rgba(255, 255, 255, 0.4);
   --color-accent: #f4f4f4;
-  --color-accent-fg: #1e1e1e;
+  --color-accent-fg: #151515;
   --color-warning: #e6e6e6;
 
-  --bg: #1e1e1e;
-  --surface: #242424;
-  --surface-2: #2c2c2c;
-  --surface-3: #383838;
-  --card: #2c2c2c;
-  --card-alt: #1e1e1e;
-  --surface-canvas: #1e1e1e;
-  --surface-panel: #242424;
-  --surface-modal: #2c2c2c;
+  --bg: #151515;
+  --surface: #1b1b1b;
+  --surface-2: #212121;
+  --surface-3: #2e2e2e;
+  --card: #212121;
+  --card-alt: #151515;
+  --surface-canvas: #151515;
+  --surface-panel: #1b1b1b;
+  --surface-modal: #212121;
   --ink: #f4f4f4;
   --ink-2: rgba(255, 255, 255, 0.6);
   --ink-3: rgba(255, 255, 255, 0.4);
   --ink-muted: rgba(255, 255, 255, 0.6);
   --ink-faint: rgba(255, 255, 255, 0.4);
-  --border: rgba(255, 255, 255, 0.12);
-  --border-2: rgba(255, 255, 255, 0.2);
-  --border-strong: rgba(255, 255, 255, 0.28);
+  --border: rgba(255, 255, 255, 0.1);
+  --border-2: rgba(255, 255, 255, 0.18);
+  --border-strong: rgba(255, 255, 255, 0.26);
   --accent: #f4f4f4;
-  --accent-fg: #1e1e1e;
+  --accent-fg: #151515;
   --sand: rgba(255, 255, 255, 0.05);
   --sand-hover: rgba(255, 255, 255, 0.09);
   --warning: #e6e6e6;
@@ -137,23 +137,24 @@
   --warning-border: rgba(255, 255, 255, 0.24);
 
   /* Ruled lines — pushed brighter + more saturated than the light values, since
-     the same faint tint nearly vanishes against pitch black. */
+     the same faint tint nearly vanishes against a near-black page. */
   --rule-line: rgba(94, 156, 255, 0.55);
   --rule-margin: rgba(255, 92, 102, 0.6);
 
-  /* Dots go light on black so the grid stays visible. */
-  --grid-dot: rgba(255, 255, 255, 0.07);
+  /* Dots go light on the dark board so the grid stays visible. On #151515 the
+     old 0.07 white read as almost nothing — this is nudged up to compensate. */
+  --grid-dot: rgba(255, 255, 255, 0.085);
 
-  /* Connectors go near-white so they read against the pitch-black canvas. */
+  /* Connectors go near-white so they read against the dark canvas. */
   --connector: rgba(255, 255, 255, 0.62);
 
-  --shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.6);
-  --shadow-lifted: 0 8px 24px rgba(0, 0, 0, 0.78);
+  --shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.7);
+  --shadow-lifted: 0 8px 24px rgba(0, 0, 0, 0.85);
 }
 
-/* Frosted overlay chips flip to a dark frost so they read against #1e1e1e. */
+/* Frosted overlay chips flip to a dark frost so they read against #151515. */
 :root.dark .glass-bar {
-  background: rgba(38, 38, 38, 0.74);
+  background: rgba(30, 30, 30, 0.78);
 }
 :root.dark ::-webkit-scrollbar-thumb:hover {
   background: #3f3f3f;
@@ -163,13 +164,13 @@
   color: var(--ink);
 }
 
-/* Paper grain on the softer #1e1e1e base: unlike pure black, `overlay` has real
+/* Paper grain on the #151515 base: unlike pure black, `overlay` has real
    luminance to work with here, so it adds both light and dark fleck the way it
    does on paper — closer to the light theme's `multiply` feel than the flatter
    `screen` trick pure black needed. */
 :root.dark .canvas-grain::before {
   mix-blend-mode: overlay;
-  opacity: 0.5;
+  opacity: 0.42;
 }
 
 * {

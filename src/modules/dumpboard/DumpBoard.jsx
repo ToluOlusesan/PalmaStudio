@@ -1,15 +1,17 @@
 import { useEffect, useCallback, useRef, useState, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Minus, Plus, ArrowsIn, ArrowLineUp, ArrowLineDown, Copy, Clipboard, ArrowCounterClockwise, Trash, FolderOpen, LinkSimple, Export, ArrowRight, ArrowsLeftRight, SelectionPlus, SelectionSlash, AlignLeft, AlignRight, AlignTop, AlignBottom, AlignCenterHorizontal, AlignCenterVertical, Rows, Columns, Lock, LockOpen, TextT, Target } from '@phosphor-icons/react'
+import { Minus, Plus, ArrowsIn, Crop, Play, Pause, FilmSlate, ArrowLineUp, ArrowLineDown, Copy, Clipboard, ArrowCounterClockwise, Trash, FolderOpen, LinkSimple, Export, ArrowRight, ArrowsLeftRight, SelectionPlus, SelectionSlash, AlignLeft, AlignRight, AlignTop, AlignBottom, AlignCenterHorizontal, AlignCenterVertical, Rows, Columns, Lock, LockOpen, TextT, Target } from '@phosphor-icons/react'
 import { useCanvasStore } from '../../store/canvasStore.js'
 import { useFocusStore } from '../../store/focusStore.js'
+import { useStoryboardStore } from '../../store/storyboardStore.js'
 import { useProjectStore } from '../../store/projectStore.js'
 import { useSessionStore } from '../../store/sessionStore.js'
-import { useCanvas } from '../../hooks/useCanvas.js'
+import { useCanvas, ZOOM_MIN, ZOOM_MAX } from '../../hooks/useCanvas.js'
 import { useDrop } from '../../hooks/useDrop.js'
 import { useTauriDrop } from '../../hooks/useTauriDrop.js'
 import { snapToGrid, tidyClusters, captureVideoPoster, loadImageSize, fitImageBox } from '../../utils/canvasUtils.js'
-import { kindFromName, isImageType, isVideoType, basename } from '../../utils/pathUtils.js'
+import { kindFromName, isImageType, isVideoType, basename, isGifItem } from '../../utils/pathUtils.js'
+import { hasCrop } from '../../utils/cropGeometry.js'
 import { revealInFolder, pickFile, isDiskPath, toAssetUrl, isElectron, saveDataUrl, copyAsset, saveAsset, desktopPathForFile, persistImage } from '../../utils/platform.js'
 import { exportBoardImage, boardToPdfDataUri } from '../../utils/captureBoard.js'
 import { setItemClipboard, getItemClipboard, getItemClipboardSignature } from '../../utils/itemClipboard.js'
@@ -91,8 +93,10 @@ export default function DumpBoard({
   const projects = useProjectStore((s) => s.projects)
   const sessionId = useSessionStore((s) => s.session?.id)
 
-  const { canvasRef, panX, panY, zoom, spaceDown, isPanning, handleMouseDown, zoomTo, resetView } =
-    useCanvas()
+  const {
+    canvasRef, panX, panY, zoom, spaceDown, isPanning, interacting, handleMouseDown,
+    zoomTo, zoomIn, zoomOut, zoomToFit, zoomToSelection,
+  } = useCanvas()
   const drop = useDrop(canvasRef)
   const tauriDrop = useTauriDrop(canvasRef, drop.toCanvas) // real paths under desktop
   const isDraggingFiles = drop.isDragging || tauriDrop.isDragging
@@ -111,6 +115,19 @@ export default function DumpBoard({
     toastTimer.current = setTimeout(() => setToast(null), 2400)
   }, [])
   useEffect(() => () => toastTimer.current && clearTimeout(toastTimer.current), [])
+
+  // Promote images/clips to the Storyboard, where each lands as the next shot in
+  // the sequence. Only media can be a panel — a note has no frame to fill — so
+  // the toast reports what actually went, not what was selected.
+  const sendToStoryboard = useCallback(
+    (its) => {
+      const media = (its || []).filter((it) => it.type === 'image' || it.type === 'video')
+      if (!media.length) return flashToast('Only images and clips can be storyboard panels')
+      media.forEach((it) => useStoryboardStore.getState().sendToStoryboard(it))
+      flashToast(`Sent ${media.length} to Storyboard`)
+    },
+    [flashToast]
+  )
 
   const panMode = spaceDown || tool === 'pan'
 
@@ -463,6 +480,14 @@ export default function DumpBoard({
         }
         return
       }
+      // Send the selection to the Storyboard, in selection order.
+      if (mod && key === 'b') {
+        if (sel.length) {
+          e.preventDefault()
+          sendToStoryboard(useCanvasStore.getState().items.filter((it) => sel.includes(it.id)))
+        }
+        return
+      }
       if (e.key === '?') {
         e.preventDefault()
         setShowHelp((v) => !v)
@@ -498,7 +523,7 @@ export default function DumpBoard({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [undo, redo, setSelection, deleteItems, clearSelection, moveBy, pushHistory, addItems, group, ungroup, toggleLock, removeEdge, selectEdge, showHelp])
+  }, [undo, redo, setSelection, deleteItems, clearSelection, moveBy, pushHistory, addItems, group, ungroup, toggleLock, removeEdge, selectEdge, showHelp, sendToStoryboard])
 
   // Empty-canvas hit test. The inner transformed layer (canvasBg) shifts when
   // panned, exposing the outer canvasRoot — both count as "empty canvas".
@@ -556,6 +581,19 @@ export default function DumpBoard({
     video: { width: 220, height: 140 },
     note: { width: 150, height: 118 },
     comment: { width: 200, height: 96 },
+  }
+  // Reset size: put a picture back at its natural proportions (and drop any
+  // crop), rather than the fixed rectangle the old menu entry forced — which on
+  // a portrait image just cropped it differently.
+  const resetSize = (item) => {
+    updateItem(item.id, { crop: null })
+    if ((item.type === 'image' || item.type === 'video') && item.src) {
+      loadImageSize(item.src).then((d) => {
+        updateItem(item.id, d ? fitImageBox(d.w, d.h) : DEFAULT_SIZE[item.type])
+      })
+      return
+    }
+    updateItem(item.id, DEFAULT_SIZE[item.type] || DEFAULT_SIZE.image)
   }
   const duplicate = (item) => {
     const { id, zIndex, groupId, groupColor, ...rest } = item
@@ -734,7 +772,19 @@ export default function DumpBoard({
           { label: 'Copy', icon: Copy, hint: 'Ctrl C', onClick: () => copyItems(menuTargetItems()) },
           { label: 'Paste', icon: Clipboard, hint: 'Ctrl V', onClick: () => pasteFromMenu() },
           { label: 'Duplicate', icon: Copy, hint: 'Ctrl D', onClick: () => duplicate(menu.item) },
-          { label: 'Reset size', icon: ArrowCounterClockwise, onClick: () => updateItem(menu.item.id, DEFAULT_SIZE[menu.item.type] || DEFAULT_SIZE.image) },
+          { label: 'Reset size', icon: ArrowCounterClockwise, onClick: () => resetSize(menu.item) },
+          ...(hasCrop(menu.item)
+            ? [{ label: 'Reset crop', icon: Crop, onClick: () => updateItem(menu.item.id, { crop: null }) }]
+            : []),
+          ...(isGifItem(menu.item)
+            ? [
+                {
+                  label: menu.item.gifPaused ? 'Play GIF' : 'Pause GIF',
+                  icon: menu.item.gifPaused ? Play : Pause,
+                  onClick: () => updateItem(menu.item.id, { gifPaused: !menu.item.gifPaused }),
+                },
+              ]
+            : []),
           ...(selectedIds.length > 1 && selectedIds.includes(menu.item.id)
             ? [{ label: 'Group selection', icon: SelectionPlus, hint: 'Ctrl G', onClick: () => group(useCanvasStore.getState().selectedIds) }]
             : []),
@@ -772,6 +822,7 @@ export default function DumpBoard({
             : []),
           { separator: true },
           { label: 'Send to Focus', icon: Target, hint: 'Ctrl F', onClick: () => menuTargetItems().forEach((it) => useFocusStore.getState().sendToFocus(it)) },
+          { label: 'Send to Storyboard', icon: FilmSlate, hint: 'Ctrl B', onClick: () => sendToStoryboard(menuTargetItems()) },
           { separator: true },
           { label: 'Delete', icon: Trash, danger: true, hint: 'Del', onClick: () => deleteItem(menu.item.id) },
         ]
@@ -785,7 +836,13 @@ export default function DumpBoard({
           { label: 'Paste', icon: Clipboard, hint: 'Ctrl V', onClick: () => pasteFromMenu(menu.bgPos) },
           { separator: true },
           { label: 'Tidy', onClick: handleTidy },
-          ...(items.length ? [{ separator: true }, ...exportEntries()] : []),
+          ...(items.length
+            ? [
+                { label: 'Zoom to fit', icon: ArrowsIn, hint: 'Ctrl 1', onClick: zoomToFit },
+                { separator: true },
+                ...exportEntries(),
+              ]
+            : []),
         ]
 
   return (
@@ -900,8 +957,12 @@ export default function DumpBoard({
             transform: `translate(${panX}px, ${panY}px) scale(${zoom})`,
             transformOrigin: '0 0',
             // Composited layer: pan/zoom becomes a GPU transform instead of a
-            // relayout+repaint of every card each frame.
-            willChange: 'transform',
+            // relayout+repaint of every card each frame. But we only hint
+            // `will-change` WHILE actively panning/zooming — at rest it's dropped
+            // so Chromium re-rasterises the layer at the current zoom instead of
+            // GPU-upscaling a stale base-resolution texture (the "blurry when
+            // zoomed in" bug). `interacting` flips off ~160ms after motion stops.
+            willChange: interacting ? 'transform' : 'auto',
             // Above the paper-grain ::before so cards sit cleanly on the texture.
             zIndex: 1,
             // Inverse zoom for item chrome (Send-to-Focus pill, note colour pill,
@@ -1207,13 +1268,17 @@ export default function DumpBoard({
 
         {/* Zoom control — vertical stack, pinned bottom-right, always visible.
             The reliable way to zoom the board (trackpad pinch isn't forwarded by
-            the desktop WebView). Click the percentage to snap back to 100% and
-            re-centre. */}
+            every host WebView). The percentage is a menu of the levels worth
+            jumping to, including Fit and Zoom to selection. */}
         <ZoomControl
           zoom={zoom}
-          onIn={() => zoomTo(zoom + 0.2)}
-          onOut={() => zoomTo(zoom - 0.2)}
-          onReset={resetView}
+          onIn={zoomIn}
+          onOut={zoomOut}
+          onZoomTo={zoomTo}
+          onFit={zoomToFit}
+          onFitSelection={zoomToSelection}
+          hasSelection={selectedIds.length > 0}
+          hasItems={items.length > 0}
         />
       </div>
 
@@ -1237,12 +1302,18 @@ const SHORTCUTS = [
   ['Group · Ungroup', 'Ctrl G · Ctrl Shift G'],
   ['Lock · Unlock', 'Ctrl L'],
   ['Send to Focus', 'Ctrl F'],
+  ['Send to Storyboard', 'Ctrl B'],
   ['Connect items', 'Drag the top link dot'],
   ['Delete selection', 'Del · Backspace'],
   ['Nudge (fine with Shift)', 'Arrow keys'],
   ['Undo · Redo', 'Ctrl Z · Ctrl Shift Z'],
   ['Pan', 'Space-drag · middle-drag'],
   ['Zoom', 'Ctrl-scroll · pinch · +/−'],
+  ['100% · Fit board · Fit selection', 'Ctrl 0 · 1 · 2'],
+  ['Scale media (aspect locked)', 'Drag the corner handle'],
+  ['Crop media', 'Ctrl-drag the handle'],
+  ['Reposition inside a crop', 'Ctrl-drag the picture'],
+  ['Stretch freely', 'Shift-drag the handle'],
   ['Add note', 'Double-click'],
   ['Deselect', 'Esc'],
   ['This cheat-sheet', '?'],
@@ -1352,10 +1423,29 @@ function SelSep() {
   return <span className="w-px h-5 mx-0.5 bg-[var(--border-2)] shrink-0" />
 }
 
-// Prominent, always-on canvas zoom control, pinned to the bottom-centre. Sits
-// outside the panned/zoomed layer so it stays put. Frosted (.glass-bar) — the
-// brand's sanctioned floating-overlay treatment.
-function ZoomControl({ zoom, onIn, onOut, onReset }) {
+// Prominent, always-on canvas zoom control, pinned bottom-right. Sits outside
+// the panned/zoomed layer so it stays put. Frosted (.glass-bar) — the brand's
+// sanctioned floating-overlay treatment.
+//
+// The percentage is a button, not a readout: clicking it opens the levels worth
+// jumping to (Fit, the selection, and round stops) with their shortcuts, which
+// is where the zoom controls of every canvas tool eventually end up.
+const ZOOM_PRESETS = [0.25, 0.5, 1, 2, 4]
+function ZoomControl({ zoom, onIn, onOut, onZoomTo, onFit, onFitSelection, hasSelection, hasItems }) {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef(null)
+
+  // Close the menu on any click outside it (capture, so it settles before the
+  // click reaches the canvas and starts a marquee).
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e) => {
+      if (!rootRef.current?.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('pointerdown', onDown, true)
+    return () => document.removeEventListener('pointerdown', onDown, true)
+  }, [open])
+
   // Every row is the same 40px-wide box, centred, so the +, %, −, rule and
   // fit-view glyph sit on one clean vertical axis.
   const ZBtn = ({ icon: Icon, label, onClick, disabled }) => (
@@ -1369,22 +1459,56 @@ function ZoomControl({ zoom, onIn, onOut, onReset }) {
       <Icon size={19} weight="regular" />
     </button>
   )
+  const Row = ({ label, hint, onClick, disabled }) => (
+    <button
+      onClick={() => {
+        setOpen(false)
+        onClick()
+      }}
+      disabled={disabled}
+      className="flex items-center justify-between gap-6 w-full px-2.5 py-1.5 rounded-md text-left text-[12px] text-ink hover:bg-[var(--sand-hover)] disabled:opacity-35 disabled:hover:bg-transparent transition-colors"
+    >
+      <span>{label}</span>
+      {hint && <span className="text-[10px] font-mono text-ink-3">{hint}</span>}
+    </button>
+  )
+
   return (
     <div
+      ref={rootRef}
       className="pop-in glass-bar absolute bottom-6 right-6 z-30 flex flex-col items-center gap-0.5 rounded-[22px] p-1.5"
       onMouseDown={(e) => e.stopPropagation()}
     >
-      <ZBtn icon={Plus} label="Zoom in" onClick={onIn} disabled={zoom >= 4} />
+      {open && (
+        <div className="pop-in glass-bar absolute bottom-full right-0 mb-2 w-[196px] rounded-[12px] p-1">
+          <Row label="Zoom to fit" hint="Ctrl 1" onClick={onFit} disabled={!hasItems} />
+          <Row label="Zoom to selection" hint="Ctrl 2" onClick={onFitSelection} disabled={!hasSelection} />
+          <span className="block h-px my-1 mx-2 bg-[var(--border-2)]" />
+          {ZOOM_PRESETS.map((p) => (
+            <Row
+              key={p}
+              label={`${p * 100}%`}
+              hint={p === 1 ? 'Ctrl 0' : undefined}
+              onClick={() => onZoomTo(p)}
+            />
+          ))}
+        </div>
+      )}
+      <ZBtn icon={Plus} label="Zoom in" onClick={onIn} disabled={zoom >= ZOOM_MAX} />
       <button
-        onClick={onReset}
-        title="Reset to 100%"
-        className="grid place-items-center w-10 h-8 text-[12px] font-medium tabular-nums text-ink rounded-lg hover:bg-[var(--sand-hover)] transition-colors"
+        onClick={() => setOpen((v) => !v)}
+        title="Zoom levels"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className={`grid place-items-center w-10 h-8 text-[12px] font-medium tabular-nums rounded-lg transition-colors ${
+          open ? 'bg-[var(--sand-hover)] text-ink' : 'text-ink hover:bg-[var(--sand-hover)]'
+        }`}
       >
         {Math.round(zoom * 100)}%
       </button>
-      <ZBtn icon={Minus} label="Zoom out" onClick={onOut} disabled={zoom <= 0.25} />
+      <ZBtn icon={Minus} label="Zoom out" onClick={onOut} disabled={zoom <= ZOOM_MIN} />
       <span className="h-px w-6 my-1 bg-[var(--border-2)]" />
-      <ZBtn icon={ArrowsIn} label="Reset view" onClick={onReset} />
+      <ZBtn icon={ArrowsIn} label="Zoom to fit (Ctrl 1)" onClick={onFit} disabled={!hasItems} />
     </div>
   )
 }

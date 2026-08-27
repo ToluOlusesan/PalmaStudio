@@ -3,17 +3,42 @@ import { ImageBroken, ChatCircle, Minus, Lock, Target, Check } from '@phosphor-i
 import { useCanvasStore } from '../../store/canvasStore.js'
 import { useFocusStore } from '../../store/focusStore.js'
 import { snapToGrid } from '../../utils/canvasUtils.js'
+import { isGifItem } from '../../utils/pathUtils.js'
+import { hasCrop, resolveCrop, clampCrop, scaleCrop, cropStyle } from '../../utils/cropGeometry.js'
 import Badge from '../../components/Badge.jsx'
 import CanvasVideo from './CanvasVideo.jsx'
+import CanvasGif from './CanvasGif.jsx'
 
 const TIDY_EASE = 'cubic-bezier(0.25, 0.46, 0.45, 0.94)'
 const PIN = 30 // collapsed-comment pin size
+const MIN_W = 60
+const MIN_H = 48
+
+// Handle placement. Each sits half in / half out of the card edge so it can be
+// grabbed from either side of the boundary.
+const CORNERS = [
+  { dir: 'nw', className: '-left-1 -top-1', cursor: 'nwse-resize' },
+  { dir: 'ne', className: '-right-1 -top-1', cursor: 'nesw-resize' },
+  { dir: 'sw', className: '-left-1 -bottom-1', cursor: 'nesw-resize' },
+  { dir: 'se', className: '-right-1 -bottom-1', cursor: 'nwse-resize' },
+]
+const SIDES = [
+  { dir: 'w', className: '-left-[3px] top-1/2 -translate-y-1/2' },
+  { dir: 'e', className: '-right-[3px] top-1/2 -translate-y-1/2' },
+]
 
 // A single absolutely-positioned canvas item (image / video / note / comment).
-// Drag moves it (screen delta ÷ zoom); a corner handle resizes. While the
+// Drag moves it (screen delta ÷ zoom); the corner and side handles resize it,
+// each pinning the side opposite itself. While the
 // canvas is in pan mode the item yields so the canvas can pan. `animating`
 // turns on the 300ms positional transition used by Tidy / Breathe. A collapsed
 // comment renders as a small pin and expands on click.
+//
+// Resizing media follows Figma's split: a plain corner drag SCALES (aspect
+// locked — the picture never distorts), Ctrl/⌘-drag CROPS (the frame changes
+// around a picture that stays put), and Shift-drag is the old free resize for
+// when you really do want to squash something. Ctrl-dragging the picture itself
+// slides it inside its crop. See utils/cropGeometry.js for the model.
 function CanvasItem({ item, selected, panMode, animating, onContextMenu }) {
   const updateItem = useCanvasStore((s) => s.updateItem)
   const bringToFront = useCanvasStore((s) => s.bringToFront)
@@ -26,6 +51,24 @@ function CanvasItem({ item, selected, panMode, animating, onContextMenu }) {
 
   const [dragging, setDragging] = useState(false)
   const [editing, setEditing] = useState(false)
+  const [sizing, setSizing] = useState(null) // 'scale' | 'crop' | 'free' — live badge
+  const rootRef = useRef(null)
+
+  const isMedia = item.type === 'image' || item.type === 'video'
+  const isGif = isGifItem(item)
+
+  // Intrinsic pixel size of whatever is painted in this card — read straight off
+  // the live element, so nothing extra has to be stored on the item. Returns
+  // null until the media has actually decoded: a crop derived from a guessed
+  // aspect ratio would lock the picture into that wrong shape permanently (the
+  // drawn size is what gets persisted), so the crop gestures sit out until the
+  // real dimensions are known rather than working from a placeholder.
+  const naturalSize = () => {
+    const el = rootRef.current?.querySelector('img, canvas, video')
+    const w = el?.naturalWidth || el?.videoWidth || el?.width || 0
+    const h = el?.naturalHeight || el?.videoHeight || el?.height || 0
+    return w > 0 && h > 0 ? { w, h } : null
+  }
 
   const isComment = item.type === 'comment'
   const collapsed = isComment && item.collapsed
@@ -58,6 +101,13 @@ function CanvasItem({ item, selected, panMode, animating, onContextMenu }) {
 
     // Locked items can be selected (to unlock) but never dragged.
     if (item.locked) return
+
+    // Ctrl/⌘-drag on media slides the picture inside its frame instead of
+    // moving the card — the other half of Figma's crop gesture, and the only
+    // way to choose WHICH part of a cropped image you keep. Falls through to a
+    // normal move while the picture is still loading (see naturalSize).
+    const natForPan = isMedia && (e.ctrlKey || e.metaKey) ? naturalSize() : null
+    if (natForPan) return startCropPan(e, natForPan)
 
     const sel = useCanvasStore.getState().selectedIds
     const baseIds = sel.includes(item.id) && sel.length ? sel : [item.id]
@@ -171,24 +221,157 @@ function CanvasItem({ item, selected, panMode, animating, onContextMenu }) {
     window.addEventListener('mouseup', up)
   }
 
-  const startResize = (e) => {
+  // Ctrl/⌘-drag on the picture: slide it inside its frame. Materialises a crop
+  // from the current cover fit on first use, so an image that has never been
+  // cropped starts exactly where it looks like it is.
+  const startCropPan = (e, nat) => {
+    e.stopPropagation()
+    e.preventDefault()
+    const { zoom } = useCanvasStore.getState()
+    const startCrop = resolveCrop(item, nat.w, nat.h)
+    setSizing('crop')
+    let pushed = false
+    const move = (ev) => {
+      if (!pushed) {
+        pushed = true
+        useCanvasStore.getState().pushHistory()
+      }
+      const dx = (ev.clientX - e.clientX) / zoom
+      const dy = (ev.clientY - e.clientY) / zoom
+      updateItem(item.id, {
+        crop: clampCrop({ ...startCrop, x: startCrop.x + dx, y: startCrop.y + dy }, item.width, item.height),
+      })
+    }
+    const up = () => {
+      setSizing(null)
+      window.removeEventListener('mousemove', move)
+      window.removeEventListener('mouseup', up)
+    }
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
+  }
+
+  // Resize from any handle. `dir` names the edges the handle owns — 'se', 'w',
+  // 'ne' and so on — and the side OPPOSITE it stays pinned, so dragging the left
+  // handle grows the card leftwards instead of shuffling the whole thing right.
+  // (A lone bottom-right handle could only ever anchor the top-left corner,
+  // which is why sizing something against a neighbour used to take two moves:
+  // resize, then drag back.)
+  //
+  // Which of the three resizes you get is decided at mousedown and held for the
+  // whole drag, so the card can't change behaviour under your hand halfway:
+  //   plain  → scale, aspect locked (media) / free (notes, comments)
+  //   Ctrl/⌘ → crop: the frame moves, the picture doesn't
+  //   Shift  → free resize, for deliberate squashing
+  const startResize = (e, dir) => {
     e.stopPropagation()
     e.preventDefault()
     bringToFront(item.id)
     const { zoom } = useCanvasStore.getState()
-    const start = { x: e.clientX, y: e.clientY, w: item.width, h: item.height, zoom }
+    const nat = isMedia ? naturalSize() : null
+    const crop = nat ? resolveCrop(item, nat.w, nat.h) : null
+    // Crop needs the picture's real dimensions; without them (still decoding)
+    // it degrades to a scale, which needs nothing but the frame.
+    const mode = crop && (e.ctrlKey || e.metaKey) ? 'crop' : !isMedia || e.shiftKey ? 'free' : 'scale'
+    const N = dir.includes('n')
+    const S = dir.includes('s')
+    const W = dir.includes('w')
+    const E = dir.includes('e')
+    const start = {
+      x: e.clientX,
+      y: e.clientY,
+      w: item.width,
+      h: item.height,
+      itemX: item.x,
+      itemY: item.y,
+      zoom,
+      crop,
+    }
+    setSizing(mode)
     let pushed = false
+
+    // Place a freshly-sized frame so the handle's opposite side doesn't move.
+    // On the axis a side handle doesn't drive, the frame grows about its centre
+    // — the only choice that doesn't make an edge drag creep the card sideways.
+    const anchored = (w, h) => ({
+      x: Math.round(W ? start.itemX + (start.w - w) : E ? start.itemX : start.itemX + (start.w - w) / 2),
+      y: Math.round(N ? start.itemY + (start.h - h) : S ? start.itemY : start.itemY + (start.h - h) / 2),
+    })
+
     const move = (ev) => {
       if (!pushed) {
         pushed = true
         useCanvasStore.getState().pushHistory() // one undo entry for the resize
       }
+      // Outward-positive deltas: dragging the west handle left grows the card,
+      // which is a NEGATIVE clientX delta — so each side flips its own sign and
+      // the rest of the maths stays direction-agnostic.
+      const rawX = (ev.clientX - start.x) / start.zoom
+      const rawY = (ev.clientY - start.y) / start.zoom
+      const dx = E ? rawX : W ? -rawX : 0
+      const dy = S ? rawY : N ? -rawY : 0
+
+      if (mode === 'scale') {
+        // Project the drag onto whatever the handle drives — the frame diagonal
+        // for a corner, the single axis for a side — so the handle tracks the
+        // cursor while width and height stay locked to each other.
+        const k = Math.max(
+          MIN_W / start.w,
+          MIN_H / start.h,
+          E || W
+            ? N || S
+              ? 1 + (dx * start.w + dy * start.h) / (start.w * start.w + start.h * start.h)
+              : 1 + dx / start.w
+            : 1 + dy / start.h
+        )
+        const width = Math.round(start.w * k)
+        const height = Math.round(start.h * k)
+        updateItem(item.id, {
+          width,
+          height,
+          ...anchored(width, height),
+          ...(hasCrop(item) ? { crop: scaleCrop(start.crop, k) } : {}),
+        })
+        return
+      }
+
+      // Crop: the frame closes into the picture (never past it — there'd be
+      // nothing to show), and the picture itself is left at exactly its size.
+      // Because the frame's origin can move, the crop offset has to move by the
+      // same amount in reverse, or the picture would slide along with the frame
+      // instead of staying put on the board.
+      if (mode === 'crop') {
+        const width = Math.round(Math.max(MIN_W, Math.min(start.crop.w, start.w + dx)))
+        const height = Math.round(Math.max(MIN_H, Math.min(start.crop.h, start.h + dy)))
+        const at = anchored(width, height)
+        updateItem(item.id, {
+          width,
+          height,
+          ...at,
+          crop: clampCrop(
+            {
+              ...start.crop,
+              x: start.crop.x - (at.x - start.itemX),
+              y: start.crop.y - (at.y - start.itemY),
+            },
+            width,
+            height
+          ),
+        })
+        return
+      }
+
+      const width = Math.max(MIN_W, Math.round(start.w + dx))
+      const height = Math.max(MIN_H, Math.round(start.h + dy))
       updateItem(item.id, {
-        width: Math.max(60, Math.round(start.w + (ev.clientX - start.x) / start.zoom)),
-        height: Math.max(48, Math.round(start.h + (ev.clientY - start.y) / start.zoom)),
+        width,
+        height,
+        ...anchored(width, height),
+        ...(hasCrop(item) ? { crop: clampCrop(start.crop, width, height) } : {}),
       })
     }
     const up = () => {
+      setSizing(null)
       window.removeEventListener('mousemove', move)
       window.removeEventListener('mouseup', up)
     }
@@ -240,8 +423,20 @@ function CanvasItem({ item, selected, panMode, animating, onContextMenu }) {
     window.addEventListener('mouseup', up)
   }
 
+  // How the picture is painted: cover-fit until the card has been cropped, then
+  // absolutely placed at exactly the drawn size the crop records.
+  const mediaClassName = hasCrop(item)
+    ? 'pointer-events-none select-none'
+    : 'w-full h-full object-cover pointer-events-none select-none'
+  const mediaStyle = hasCrop(item) ? cropStyle(item.crop) : undefined
+
+  const resizeHint = isMedia
+    ? 'Drag to scale · Ctrl-drag to crop · Shift-drag to stretch'
+    : 'Drag to resize'
+
   return (
     <div
+      ref={rootRef}
       role="group"
       tabIndex={0}
       onMouseDown={startDrag}
@@ -289,16 +484,19 @@ function CanvasItem({ item, selected, panMode, animating, onContextMenu }) {
       >
         {item.missing ? (
           <MissingItem item={item} />
+        ) : isGif ? (
+          <CanvasGif item={item} mediaClassName={mediaClassName} mediaStyle={mediaStyle} />
         ) : item.type === 'image' ? (
           <img
             src={item.src}
             alt={item.label}
             draggable={false}
             decoding="async"
-            className="w-full h-full object-cover pointer-events-none select-none"
+            className={mediaClassName}
+            style={mediaStyle}
           />
         ) : item.type === 'video' ? (
-          <CanvasVideo item={item} />
+          <CanvasVideo item={item} mediaClassName={mediaClassName} mediaStyle={mediaStyle} />
         ) : item.type === 'comment' ? (
           <CommentItem
             item={item}
@@ -347,7 +545,9 @@ function CanvasItem({ item, selected, panMode, animating, onContextMenu }) {
           }}
           title={sent ? 'Sent to Focus' : 'Send to Focus'}
           aria-label={sent ? 'Sent to Focus' : 'Send to Focus'}
-          className="absolute bottom-1.5 left-1/2 z-10 inline-flex items-center gap-1.5 whitespace-nowrap px-2.5 py-1 rounded-full text-[11px] font-medium text-[#0a0a0a] opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity duration-150"
+          className={`absolute left-1/2 z-10 inline-flex items-center gap-1.5 whitespace-nowrap px-2.5 py-1 rounded-full text-[11px] font-medium text-[#0a0a0a] opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity duration-150 ${
+            isGif ? 'top-1.5' : 'bottom-1.5'
+          }`}
           style={{
             background: 'rgba(255,255,255,0.82)',
             backdropFilter: 'blur(6px)',
@@ -355,7 +555,9 @@ function CanvasItem({ item, selected, panMode, animating, onContextMenu }) {
             border: '0.5px solid var(--border)',
             boxShadow: 'var(--shadow-soft)',
             transform: 'translateX(-50%) scale(var(--inv-zoom, 1))',
-            transformOrigin: 'bottom center',
+            // A GIF's frame transport owns the bottom of the card, so the pill
+            // moves to the top rather than sitting on top of the scrubber.
+            transformOrigin: isGif ? 'top center' : 'bottom center',
           }}
         >
           {sent ? <Check size={13} weight="bold" /> : <Target size={13} />}
@@ -373,17 +575,54 @@ function CanvasItem({ item, selected, panMode, animating, onContextMenu }) {
         />
       )}
 
-      {/* resize handle (not on a collapsed comment pin, not when locked) */}
+      {/* Resize handles (not on a collapsed comment pin, not when locked).
+          Four corners plus a bar on each side: the side handles are what let you
+          size a card against whatever sits next to it, since each handle pins the
+          opposite side. Top and bottom centre are deliberately left free — the
+          connector dot lives at one and the Send-to-Focus pill at the other, and
+          both edges are still reachable from the corners. */}
       {!panMode && !collapsed && !item.locked && (
+        <>
+          {CORNERS.map(({ dir, className, cursor }) => (
+            <div
+              key={dir}
+              onMouseDown={(e) => startResize(e, dir)}
+              title={resizeHint}
+              className={`absolute w-3 h-3 rounded-[3px] opacity-0 group-hover:opacity-100 transition-opacity ${className}`}
+              style={{ background: 'var(--accent)', border: '1px solid var(--bg)', cursor }}
+            />
+          ))}
+          {SIDES.map(({ dir, className }) => (
+            <div
+              key={dir}
+              onMouseDown={(e) => startResize(e, dir)}
+              title={resizeHint}
+              className={`absolute w-[5px] h-5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity ${className}`}
+              style={{ background: 'var(--accent)', border: '1px solid var(--bg)', cursor: 'ew-resize' }}
+            />
+          ))}
+        </>
+      )}
+
+      {/* Which resize you're getting, named while you do it — the three
+          gestures are only discoverable if the card says which one it heard.
+          Counter-scaled like the rest of the on-card chrome. */}
+      {sizing && (
         <div
-          onMouseDown={startResize}
-          className="absolute -right-1 -bottom-1 w-3 h-3 rounded-[3px] opacity-0 group-hover:opacity-100 transition-opacity"
+          className="absolute -top-1 left-1/2 px-1.5 py-[2px] rounded text-[10px] font-medium pointer-events-none whitespace-nowrap"
           style={{
-            background: 'var(--accent)',
-            border: '1px solid var(--bg)',
-            cursor: 'nwse-resize',
+            background: 'rgba(10,10,10,0.78)',
+            color: '#f5f5f5',
+            transform: 'translate(-50%, -100%) scale(var(--inv-zoom, 1))',
+            transformOrigin: 'bottom center',
           }}
-        />
+        >
+          {sizing === 'crop'
+            ? `Crop · ${Math.round(item.width)} × ${Math.round(item.height)}`
+            : sizing === 'scale'
+              ? `Scale · ${Math.round(item.width)} × ${Math.round(item.height)}`
+              : `Stretch · ${Math.round(item.width)} × ${Math.round(item.height)}`}
+        </div>
       )}
 
       {/* link handle — drag to connect to another item. Filled accent dot with a

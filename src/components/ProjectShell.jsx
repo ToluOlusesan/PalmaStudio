@@ -10,6 +10,7 @@ import { useSession } from '../hooks/useSession.js'
 
 import DumpBoard from '../modules/dumpboard/DumpBoard.jsx'
 import MoodBoard from '../modules/moodboard/MoodBoard.jsx'
+import StoryBoard from '../modules/storyboard/StoryBoard.jsx'
 import Scratchpad from '../modules/scratchpad/Scratchpad.jsx'
 
 // Motion Refs and Bento are dropped from the product. Project Skin is no longer
@@ -19,12 +20,14 @@ import Scratchpad from '../modules/scratchpad/Scratchpad.jsx'
 const TABS = [
   { key: 'dumpboard', label: 'Dump Board' },
   { key: 'moodboard', label: 'Focus' },
+  { key: 'storyboard', label: 'Storyboard' },
   { key: 'scratchpad', label: 'Notes' },
 ]
 
 const REGISTRY = {
   dumpboard: DumpBoard,
   moodboard: MoodBoard,
+  storyboard: StoryBoard,
   scratchpad: Scratchpad,
 }
 

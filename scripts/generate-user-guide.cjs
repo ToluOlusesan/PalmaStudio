@@ -324,15 +324,16 @@ async function build() {
     ['01', 'What is Palma', '03'],
     ['02', 'Projects & the Dashboard', '04'],
     ['03', 'The Dump Board', '05'],
-    ['04', 'Notes, comments & connectors', '06'],
-    ['05', 'Keyboard shortcuts', '07'],
-    ['06', 'Focus — zones & curation', '08'],
-    ['07', 'Scratchpad', '09'],
-    ['08', 'Library', '10'],
-    ['09', 'Exporting & the Process Brief', '11'],
-    ['10', 'The Palma Clipper (coming soon)', '12'],
-    ['11', 'Appearance — light & dark', '13'],
-    ['12', 'Tips for a clean workflow', '14'],
+    ['04', 'Notes, comments & connectors', '07'],
+    ['05', 'Keyboard shortcuts', '08'],
+    ['06', 'Focus — zones & curation', '09'],
+    ['07', 'Storyboard — sequencing shots', '10'],
+    ['08', 'Scratchpad', '11'],
+    ['09', 'Library', '12'],
+    ['10', 'Exporting & the Process Brief', '13'],
+    ['11', 'The Palma Clipper (coming soon)', '14'],
+    ['12', 'Appearance — light & dark', '15'],
+    ['13', 'Tips for a clean workflow', '16'],
   ]
   let ty = M + 96
   for (const [num, title, page] of toc) {
@@ -417,17 +418,18 @@ async function build() {
     '**Drag & drop** — images or videos from your file manager or a browser window.',
     '**Paste** — a copied screenshot, an image from another app, a URL, or plain text. Palma figures out what you pasted: images become image cards, a direct image link becomes an image reference, anything else becomes a note.',
     '**The toolbar** — Photo/Video buttons open a native file picker.',
-    '**The Palma Clipper** _(coming soon)_ — right-click any image on the web and save it straight to the open project (see section 10).',
+    '**The Palma Clipper** _(coming soon)_ — right-click any image on the web and save it straight to the open project (see section 11).',
   ], M, y, CW, { gap: 6 })
   y += 8
 
   y = subhead('Moving around', y)
   const moves = [
     ['Pan', 'Hold Space and drag, or middle-mouse drag'],
-    ['Zoom', 'Scroll, trackpad pinch, or the on-screen zoom control'],
+    ['Zoom', 'Ctrl-scroll, trackpad pinch, or the zoom control (10%-800%)'],
     ['Select', 'Click an item; Shift-click to add to the selection'],
     ['Marquee select', 'Drag on empty canvas to box-select everything inside'],
-    ['Reset view', 'Click the zoom percentage, bottom-centre'],
+    ['Zoom levels', 'Click the zoom percentage for Fit and the round stops'],
+    ['Fit the board', 'Ctrl 1 (Ctrl 2 fits just the selection, Ctrl 0 is 100%)'],
   ]
   for (const [action, how] of moves) {
     pdf.setFont('Inter', 'bold'); pdf.setFontSize(10); pdf.setTextColor(INK)
@@ -437,6 +439,18 @@ async function build() {
     y += 16
   }
   y += 10
+
+  newPage('03 — The Dump Board', 'Sizing, GIFs & organising')
+  y = heading('Sizing, GIFs & organising', M + 60)
+  y += 26
+
+  y = subhead('Sizing a picture: scale vs. crop', y)
+  y = richParagraph('Hover any image or clip and six handles appear — one at each corner, plus a bar on the left and right edge. Each handle pins the side opposite it, so dragging the left one grows the card leftwards rather than nudging the whole thing across. **Drag to scale** — the proportions stay locked, so a reference is never accidentally stretched. **Ctrl-drag the handle to crop** instead: the frame closes in while the picture stays exactly the size it was, and **Ctrl-dragging the picture itself** slides it inside that frame so you choose what to keep. **Shift-drag** is a free resize, for when you really do mean to squash something. A label names the gesture while you drag, and **Reset crop** (right-click) puts it back.', M, y, CW, { lineHeight: 16 })
+  y += 18
+
+  y = subhead('GIFs', y)
+  y = richParagraph('Drop a GIF and it plays on the board — with a real transport, not just a looping picture. Hover the card for **Play/Pause** and a **frame scrubber**: pause holds the exact frame you were looking at, play carries on from there, and the camera button drops the current frame onto the board as its own still. Paused stays paused when you reopen the project.', M, y, CW, { lineHeight: 16 })
+  y += 18
 
   y = subhead('Organising', y)
   y = richParagraph('Select two or more items and a floating toolbar appears above the selection: align (left/centre/right, top/middle/bottom), distribute evenly, group, or lock. A **group** gets its own coloured frame and can be renamed, dragged as one unit, or dissolved later. **Tidy** (canvas toolbar) packs everything into neat rows in one click — with a single-step undo if you don\'t like the result.', M, y, CW, { lineHeight: 16 })
@@ -485,11 +499,16 @@ async function build() {
     ['Undo · Redo', 'Ctrl Z · Ctrl Shift Z'],
     ['Pan', 'Space-drag · middle-drag'],
     ['Zoom', 'Ctrl-scroll · pinch · +/−'],
+    ['100% · Fit board · Fit selection', 'Ctrl 0 · Ctrl 1 · Ctrl 2'],
+    ['Scale media (aspect locked)', 'Drag the corner handle'],
+    ['Crop media', 'Ctrl-drag the corner handle'],
+    ['Reposition inside a crop', 'Ctrl-drag the picture'],
+    ['Stretch freely', 'Shift-drag the corner handle'],
     ['Add note', 'Double-click empty canvas'],
     ['Deselect', 'Esc'],
     ['This shortcut sheet, in-app', '?'],
   ]
-  const keyLikeCols = new Set(['Select all', 'Copy · Paste · Duplicate', 'Group · Ungroup', 'Lock · Unlock', 'Send to Focus', 'Delete selection', 'Undo · Redo', 'Deselect', 'This shortcut sheet, in-app'])
+  const keyLikeCols = new Set(['Select all', 'Copy · Paste · Duplicate', 'Group · Ungroup', 'Lock · Unlock', 'Send to Focus', 'Delete selection', 'Undo · Redo', 'Deselect', 'This shortcut sheet, in-app', '100% · Fit board · Fit selection'])
   pdf.setFont('Inter', 'bold'); pdf.setFontSize(8.5); pdf.setTextColor(INK_SOFT)
   pdf.text('ACTION', M, y, { charSpace: 1 })
   pdf.text('SHORTCUT', M + 260, y, { charSpace: 1 })
@@ -526,7 +545,7 @@ async function build() {
   y += 18
 
   y = subhead('Notes & pinned comments', y)
-  y = richParagraph('The **Add Note** button in the Focus toolbar drops a freestanding note anywhere on the canvas — the same drag/resize/edit behaviour as a Dump Board note. Each zone\'s header also has a small comment icon: click it to pin a comment directly to that zone. A pinned comment automatically follows the zone wherever it\'s moved or resized — and travels into the Process Brief too (see section 09), listed right below that zone\'s page.', M, y, CW, { lineHeight: 16 })
+  y = richParagraph('The **Add Note** button in the Focus toolbar drops a freestanding note anywhere on the canvas — the same drag/resize/edit behaviour as a Dump Board note. Each zone\'s header also has a small comment icon: click it to pin a comment directly to that zone. A pinned comment automatically follows the zone wherever it\'s moved or resized — and travels into the Process Brief too (see section 10), listed right below that zone\'s page.', M, y, CW, { lineHeight: 16 })
   y += 18
 
   y = subhead('The Direction statement', y)
@@ -535,7 +554,32 @@ async function build() {
   calloutBox('The Queue keeps count.', 'A checkmark shows which references are already placed in a zone; anything left un-checked is still waiting to be used.', M, y, CW)
 
   // -------------------------------------------------------- 07 scratchpad --
-  newPage('07 — Writing', 'Scratchpad')
+  // ------------------------------------------------------- 07 storyboard ----
+  newPage('07 — Sequencing', 'Storyboard')
+  y = heading('Storyboard', M + 60)
+  y = dek('References become an ordered sequence of shots, with timing.', y + 26, CW)
+  y += 14
+  y = richParagraph('Where the Dump Board is a pile and Focus is a curation, the Storyboard is an **order**. It is deliberately not a canvas: panels reflow into rows and their position in the sequence is the only thing that decides their number, so a board can never show you shot 04 sitting where shot 07 belongs.', M, y, CW, { lineHeight: 16 })
+  y += 18
+
+  y = subhead('Getting shots in', y)
+  y = richParagraph('Select anything on the Dump Board and press `Ctrl B` (or right-click → **Send to Storyboard**). Each reference lands as the next shot in the sequence — there is no queue to place from, because a sequence already knows where a new shot goes. Only images and clips can be panels. **Add panel** drops an empty frame, which is how you block a story out before you have the pictures for it.', M, y, CW, { lineHeight: 16 })
+  y += 18
+
+  y = subhead('Reordering', y)
+  y = richParagraph('Drag a panel by its picture and drop it between any two others — a caret shows where it will land, and every panel renumbers itself the moment you let go.', M, y, CW, { lineHeight: 16 })
+  y += 18
+
+  y = subhead('Framing', y)
+  y = richParagraph('Every panel on a board is the same shape, set once with the **Frame** control (16:9, 2.39:1, 4:3, 1:1, 4:5, 9:16). A picture dropped into a fixed frame is a framing decision, so **Ctrl-drag inside a panel** slides the picture within it and **Ctrl-scroll** zooms it. Framing is remembered proportionally: change the board to a different frame shape or panel size and your compositions follow, without ever distorting the picture.', M, y, CW, { lineHeight: 16 })
+  y += 18
+
+  y = subhead('Action, camera, timing', y)
+  y = richParagraph('Under each panel: what happens, how the camera moves, and how long the shot holds. The durations add up to the runtime shown at the top left — so a board tells you not just what the piece looks like but how long it runs.', M, y, CW, { lineHeight: 16 })
+  y += 14
+  calloutBox('Panels are uniform on purpose.', 'You size them all at once with S / M / L rather than one at a time — a storyboard where one shot is bigger than another is saying something you probably did not mean.', M, y, CW)
+
+  newPage('08 — Writing', 'Scratchpad')
   y = heading('Scratchpad', M + 60)
   y += 26
   y = richParagraph("Every project gets one Scratchpad — a single ruled page for the thinking that doesn't belong pinned to a board: brief notes, a client quote, a stray idea, a to-do list.", M, y, CW, { lineHeight: 16 })
@@ -546,10 +590,10 @@ async function build() {
   y = subhead('The paper quirk', y)
   y = richParagraph('The page carries faint blue ruled lines and a pink margin rule, like a real notebook — list numbers and bullets sit in that margin gutter rather than beside the text, exactly like handwriting in a lined notebook. It\'s a small detail, but it\'s the clearest place the "paper, not software" idea shows up.', M, y, CW, { lineHeight: 16 })
   y += 16
-  calloutBox('Scratchpad content travels.', 'Anything written here is pulled automatically into the Process Brief\'s Notes section on export — see section 09.', M, y, CW)
+  calloutBox('Scratchpad content travels.', 'Anything written here is pulled automatically into the Process Brief\'s Notes section on export — see section 10.', M, y, CW)
 
   // ------------------------------------------------------------ 08 library --
-  newPage('08 — Reference', 'Library')
+  newPage('09 — Reference', 'Library')
   y = heading('Library', M + 60)
   y += 26
   y = richParagraph('The Library is a flat grid of every image and video across every project in Palma — a fast way to find something you remember but can\'t place. Click a thumbnail to open it full-size; a broken reference shows as a clearly labelled placeholder rather than a silent gap, so you always know when a source file has moved or been deleted on disk.', M, y, CW, { lineHeight: 16 })
@@ -557,7 +601,7 @@ async function build() {
   richParagraph('Because Palma persists images by their real disk path (or, for pasted/web content, a stable embedded copy), an asset should keep showing up here reliably across restarts — even if you later reorganise the project\'s board.', M, y, CW, { lineHeight: 16 })
 
   // --------------------------------------------------------- 09 exporting --
-  newPage('09 — Sharing your work', 'Exporting & the Process Brief')
+  newPage('10 — Sharing your work', 'Exporting & the Process Brief')
   y = heading('Exporting & the Process Brief', M + 60)
   y += 26
   y = richParagraph('The **Export** button (top-right, inside a project) offers three things:', M, y, CW, { lineHeight: 16 })
@@ -573,7 +617,7 @@ async function build() {
   richParagraph('This is the artifact built for sharing outside Palma — with a client, a teammate, or for your own archive — everything the project stands for, collected into one file.', M, y, CW, { lineHeight: 16 })
 
   // ------------------------------------------------------------ 10 clipper --
-  newPage('10 — Collecting from the web', 'The Palma Clipper')
+  newPage('11 — Collecting from the web', 'The Palma Clipper')
   y = heading('The Palma Clipper', M + 60)
   y += 26
   y = calloutBox('Coming soon.', 'The Palma Clipper is on the way and not available yet. This section previews how it will work so you know what to expect — the right-click "Save image to Palma" option will arrive in a future update.', M, y, CW)
@@ -595,7 +639,7 @@ async function build() {
   richParagraph("The extension only ever talks to Palma on your own computer — it never sends anything to a remote server, and it's rejected by the local server if the request doesn't come from the extension itself.", M, y, CW, { lineHeight: 16 })
 
   // --------------------------------------------------------- 11 appearance --
-  newPage('11 — Appearance', 'Light & dark')
+  newPage('12 — Appearance', 'Light & dark')
   y = heading('Light & dark', M + 60)
   y += 26
   y = richParagraph("Palma defaults to a light paper theme. A **sun/moon switch** at the bottom of the sidebar, just above **New project**, switches the whole app — sidebar, tabs, canvases, everything — into a soft dark theme. The icon always shows what you'll switch _to_, not the current state: a moon while in light mode (click for dark), a sun while in dark mode (click for light) — two distinct icons, not one mark changing weight.", M, y, CW, { lineHeight: 16 })
@@ -605,7 +649,7 @@ async function build() {
   richParagraph('Dark mode keeps the same paper grain texture and the same restrained, single-accent palette — it\'s a change of lighting, not a different app.', M, y, CW, { lineHeight: 16 })
 
   // -------------------------------------------------------------- 12 tips --
-  newPage('12 — Workflow', 'Tips for a clean workflow')
+  newPage('13 — Workflow', 'Tips for a clean workflow')
   y = heading('Tips for a clean workflow', M + 60)
   y += 30
   const tips = [

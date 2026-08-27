@@ -14,6 +14,18 @@ import { uid } from '../utils/id.js'
 const CANVAS_MODULES = ['dumpboard']
 let saveTimer = null
 
+// Stores that batch their own edits (the Storyboard debounces panel typing and
+// crop drags) register here so flush() can force those pending writes into the
+// session BEFORE it serialises. Without it, closing the window inside a store's
+// own debounce window silently drops the last edit — the flush would faithfully
+// write a slice that hadn't been updated yet. Explicit rather than relying on
+// window-listener ordering.
+const flushHooks = new Set()
+export function registerFlushHook(fn) {
+  flushHooks.add(fn)
+  return () => flushHooks.delete(fn)
+}
+
 // Hydrate the live canvas store from a session's board for a given module.
 function hydrateBoard(session, moduleKey) {
   if (!CANVAS_MODULES.includes(moduleKey)) return
@@ -115,6 +127,15 @@ export const useSessionStore = create((set, get) => ({
   },
 
   flush: () => {
+    // Drain pending store-level edits first; these call saveModule, so the
+    // session has to be re-read afterwards rather than captured above.
+    for (const fn of flushHooks) {
+      try {
+        fn()
+      } catch {
+        /* a broken hook must never block the save */
+      }
+    }
     const { session, currentModule } = get()
     if (!session) return
     set({ status: 'saving' })
