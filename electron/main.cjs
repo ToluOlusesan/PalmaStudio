@@ -4,13 +4,29 @@
 // "type": "module".
 const { app, BrowserWindow, Menu, ipcMain, dialog, protocol, shell } = require('electron')
 const { autoUpdater } = require('electron-updater')
+const fs = require('fs')
 const fsp = require('fs/promises')
 const path = require('path')
 const windowState = require('./windowState.cjs')
 const { startClipServer } = require('./clipServer.cjs')
-const { downloadBestImage } = require('./imageSource.cjs')
+const { downloadBestImage, pagePreview } = require('./imageSource.cjs')
 
 const isDev = !!process.env.ELECTRON_DEV
+
+// Opt-in escape hatch for remote/headless QA machines with no usable GPU
+// process. It never changes a normal packaged launch.
+if (process.env.PALMA_DISABLE_GPU) {
+  app.disableHardwareAcceleration()
+  app.commandLine.appendSwitch('disable-gpu')
+}
+
+// Let UI verification use an isolated project cache while an installed Palma
+// window is open. This override is opt-in and never applies to packaged builds.
+if (isDev && process.env.PALMA_DEV_USER_DATA) {
+  const dir = path.resolve(process.env.PALMA_DEV_USER_DATA)
+  fs.mkdirSync(dir, { recursive: true })
+  app.setPath('userData', dir)
+}
 
 // Local files (project assets) are served to <img>/<video> through a custom,
 // privileged scheme rather than file:// (which CSP/webSecurity would block).
@@ -327,5 +343,35 @@ ipcMain.handle('download-image-url', async (_e, rawUrl) => {
     }
   } catch {
     return null
+  }
+})
+
+// Resolve an ordinary web page (including social posts) to its Open Graph or
+// Twitter-card image. The renderer persists the returned data locally, exactly
+// as it does for a directly pasted image URL.
+ipcMain.handle('preview-link-url', async (_e, rawUrl) => {
+  try {
+    const got = await pagePreview(rawUrl)
+    if (!got) return null
+    return {
+      dataUrl: `data:${got.contentType};base64,${got.buffer.toString('base64')}`,
+      ext: extFromMime(got.contentType),
+      title: got.title || '',
+      pageUrl: got.pageUrl,
+      imageUrl: got.imageUrl,
+    }
+  } catch {
+    return null
+  }
+})
+
+ipcMain.handle('open-external-url', async (_e, rawUrl) => {
+  try {
+    const url = new URL(rawUrl)
+    if (!['http:', 'https:'].includes(url.protocol)) return false
+    await shell.openExternal(url.toString())
+    return true
+  } catch {
+    return false
   }
 })

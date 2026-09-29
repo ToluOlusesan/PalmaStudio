@@ -2,9 +2,9 @@ import { useNavigate } from 'react-router-dom'
 import { SquaresFour, Stack, Plus, CaretLeft, CaretRight, MoonStars, Sun, Question, Trash } from '@phosphor-icons/react'
 import Logo from './Logo.jsx'
 import NavItem from './NavItem.jsx'
+import Thumb from './Thumb.jsx'
 import { useProjectStore } from '../store/projectStore.js'
 import { useSettingsStore } from '../store/settingsStore.js'
-import { thumbTint } from '../utils/format.js'
 
 // Group label — 10px uppercase, 0.08em tracking, ink-3.
 function SectionLabel({ children }) {
@@ -31,13 +31,15 @@ export default function Sidebar() {
 
   const trashCount = projects.filter((p) => p.deleted).length
 
-  // The coloured project chip used as a recent item's icon. The user-chosen tint
-  // (thumbColor) wins; otherwise the first extracted palette colour.
-  const chip = (p) => () => (
+  // The same real board cover used on the dashboard, cropped into a small,
+  // theme-aware aperture. Recents should be recognizable projects, not swatches.
+  const cover = (p) => () => (
     <span
-      className="block w-[15px] h-[15px] rounded-[3px] shrink-0"
-      style={{ background: thumbTint(p.thumbColor) || p.palette?.[0] || 'var(--surface-3)', border: '0.5px solid var(--border-2)' }}
-    />
+      className="block w-[23px] h-[23px] rounded-[3px] overflow-hidden shrink-0"
+      style={{ border: '0.5px solid var(--border-2)' }}
+    >
+      <Thumb project={p} compact />
+    </span>
   )
 
   return (
@@ -103,9 +105,10 @@ export default function Sidebar() {
                 <NavItem
                   key={p.id}
                   to={`/project/${p.id}/dumpboard`}
-                  icon={chip(p)}
+                  icon={cover(p)}
                   label={p.name}
                   collapsed={collapsed}
+                  recent
                 />
               ))}
             </div>

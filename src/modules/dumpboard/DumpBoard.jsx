@@ -12,7 +12,7 @@ import { useTauriDrop } from '../../hooks/useTauriDrop.js'
 import { snapToGrid, tidyClusters, captureVideoPoster, loadImageSize, fitImageBox } from '../../utils/canvasUtils.js'
 import { kindFromName, isImageType, isVideoType, basename, isGifItem } from '../../utils/pathUtils.js'
 import { hasCrop } from '../../utils/cropGeometry.js'
-import { revealInFolder, pickFile, isDiskPath, toAssetUrl, isElectron, saveDataUrl, copyAsset, saveAsset, desktopPathForFile, persistImage } from '../../utils/platform.js'
+import { revealInFolder, pickFile, isDiskPath, toAssetUrl, isElectron, saveDataUrl, copyAsset, saveAsset, desktopPathForFile, persistImage, openExternalUrl } from '../../utils/platform.js'
 import { exportBoardImage, boardToPdfDataUri } from '../../utils/captureBoard.js'
 import { setItemClipboard, getItemClipboard, getItemClipboardSignature } from '../../utils/itemClipboard.js'
 import { copyItemsToClipboard } from '../../utils/systemClipboard.js'
@@ -20,6 +20,7 @@ import { appendBoardItem, landBoardItem } from '../../utils/boardOps.js'
 import { uid } from '../../utils/id.js'
 import CanvasItem from './CanvasItem.jsx'
 import CanvasToolbar, { ToolDock } from './CanvasToolbar.jsx'
+import MediaLightbox from '../../components/MediaLightbox.jsx'
 import ContextMenu from '../../components/ContextMenu.jsx'
 
 // The Dump Board: an infinite, dot-gridded canvas. The creative inbox — messy
@@ -106,6 +107,7 @@ export default function DumpBoard({
   const [showHelp, setShowHelp] = useState(false) // shortcuts cheat-sheet overlay
   const [picker, setPicker] = useState(null) // { mode:'move'|'copy', items } project picker
   const [toast, setToast] = useState(null) // transient confirmation
+  const [viewer, setViewer] = useState(null) // image opened from the canvas
   const toastTimer = useRef(null)
   const lastNudge = useRef(0) // coalesces rapid arrow-key nudges into one undo step
 
@@ -807,6 +809,9 @@ export default function DumpBoard({
           ...(isElectron() && isDiskPath(menu.item.path)
             ? [{ label: 'Reveal in Explorer', icon: FolderOpen, onClick: () => revealInFolder(menu.item.path) }]
             : []),
+          ...(menu.item.sourceUrl
+            ? [{ label: 'Open original link', icon: LinkSimple, onClick: () => openExternalUrl(menu.item.sourceUrl) }]
+            : []),
           ...(isElectron() && (menu.item.type === 'image' || menu.item.type === 'video')
             ? [{ label: 'Relink file…', icon: LinkSimple, onClick: () => relink(menu.item) }]
             : []),
@@ -971,6 +976,9 @@ export default function DumpBoard({
             // zoomed OUT (zoom<1) we must NOT enlarge the chrome — that made the
             // pill balloon past a small card — so it just scales down with it.
             '--inv-zoom': Math.min(1, 1 / zoom),
+            // Interactive controls must stay reachable even when a large card is
+            // viewed at a low zoom. Decorative chrome can still shrink with it.
+            '--control-inv-zoom': 1 / zoom,
           }}
         >
           {/* Group frames — a coloured outline around each group's bounding box.
@@ -1004,13 +1012,17 @@ export default function DumpBoard({
             <CanvasItem
               key={item.id}
               item={item}
+              zoom={zoom}
               selected={selectedIds.includes(item.id)}
               panMode={panMode}
               animating={animating}
               onContextMenu={openItemMenu}
+              onOpenMedia={setViewer}
             />
           ))}
         </div>
+
+        {viewer && <MediaLightbox asset={viewer} onClose={() => setViewer(null)} />}
 
         {/* Group title chips — screen-space so text stays crisp at any zoom. A
             named group shows its label at the frame's top-left. While a group is

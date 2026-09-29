@@ -3,7 +3,7 @@ import { useCanvasStore } from '../store/canvasStore.js'
 import { useSessionStore } from '../store/sessionStore.js'
 import { kindFromName, isImageType, isVideoType, basename } from '../utils/pathUtils.js'
 import { snapToGrid, captureVideoPoster, loadImageSize, fitImageBox } from '../utils/canvasUtils.js'
-import { persistImage, persistRemoteImage, desktopPathForFile, toAssetUrl } from '../utils/platform.js'
+import { persistImage, persistRemoteImage, previewLinkUrl, saveAsset, desktopPathForFile, toAssetUrl } from '../utils/platform.js'
 import { uid } from '../utils/id.js'
 import { landBoardItem } from '../utils/boardOps.js'
 import { imageUrlFromTransfer, imageUrlFromHtml, isDirectImageUrl } from '../utils/imageSource.js'
@@ -17,6 +17,22 @@ const clipboardImageUrl = (e) => {
   if (fromHtml) return fromHtml
   const text = (e.clipboardData?.getData('text/plain') || '').trim()
   return isDirectImageUrl(text) ? text : ''
+}
+
+// Some social hosts (notably Instagram without a signed-in session) refuse to
+// expose an image to automated requests. Keep the link visual in that case
+// instead of degrading it to a plain text note; when Open Graph is available,
+// this is never used.
+const linkCardDataUrl = (url, title = '') => {
+  const u = new URL(url)
+  const escape = (s) => String(s || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[c])
+  const host = u.hostname.replace(/^www\./, '')
+  const label = (title || host).replace(/\s+/g, ' ').trim().slice(0, 52)
+  const path = u.pathname === '/' ? host : `${host}${u.pathname}`.slice(0, 64)
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630"><rect width="1200" height="630" fill="#f5f5f3"/><rect x="44" y="44" width="1112" height="542" rx="18" fill="#fff" stroke="#d6d6d1"/><circle cx="106" cy="108" r="16" fill="#0a0a0a"/><text x="138" y="115" font-family="Inter,Arial,sans-serif" font-size="24" fill="#666660">${escape(host)}</text><text x="84" y="288" font-family="Inter,Arial,sans-serif" font-weight="600" font-size="58" fill="#0a0a0a">${escape(label)}</text><text x="84" y="356" font-family="ui-monospace,monospace" font-size="22" fill="#777772">${escape(path)}</text><line x1="84" y1="432" x2="240" y2="432" stroke="#0a0a0a" stroke-width="5"/></svg>`
+  // Use base64 so the desktop asset writer can persist it through the same
+  // data-URL path as a downloaded JPEG/PNG.
+  return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`
 }
 
 // Drag-and-drop intake for the canvas. Accepts image/video files and dropped
@@ -77,6 +93,45 @@ export function useDrop(containerRef) {
         }
         return true
       })
+    },
+    [updateItem]
+  )
+
+  // Social and editorial links land immediately as a durable reference card.
+  // The network lookup then upgrades that card in place when a social host
+  // offers an Open Graph / Twitter thumbnail. This avoids an invisible wait on
+  // slow or login-gated platforms and guarantees a usable card either way.
+  const landLinkPreview = useCallback(
+    async (url, at) => {
+      const folder = useSessionStore.getState().session?.folder || ''
+      const projectId = useSessionStore.getState().session?.id
+      const host = new URL(url).hostname.replace(/^www\./, '')
+      const fallback = linkCardDataUrl(url)
+      const { liveId } = landBoardItem(projectId, {
+        type: 'image', src: fallback, path: url, sourceUrl: url, label: host,
+        x: snapToGrid(at.x), y: snapToGrid(at.y), width: 200, height: 150, missing: false,
+      })
+      if (liveId) loadImageSize(fallback).then((d) => d && updateItem(liveId, fitImageBox(d.w, d.h)))
+
+      // Do not make the item wait for this request. If the user changes project
+      // while it resolves, the immediately persisted card still survives; only
+      // a currently live card is upgraded in place.
+      previewLinkUrl(url).then(async (preview) => {
+        if (!preview?.dataUrl || !liveId) return
+        const savedPath = await saveAsset(folder, `assets/link_${uid('img')}.${preview.ext || 'jpg'}`, preview.dataUrl)
+        const src = savedPath ? await toAssetUrl(savedPath) : preview.dataUrl
+        updateItem(liveId, {
+          src,
+          path: savedPath || url,
+          sourceUrl: preview.pageUrl || url,
+          label: preview.title || host,
+          missing: false,
+        })
+        loadImageSize(src).then((d) => d && updateItem(liveId, fitImageBox(d.w, d.h)))
+      }).catch(() => {
+        /* The immediate link card remains the intentional fallback. */
+      })
+      return true
     },
     [updateItem]
   )
@@ -206,13 +261,19 @@ export function useDrop(containerRef) {
         return
       }
 
-      // Dropped just a URL (e.g. from a browser tab, no file) → download the
-      // bytes into the project's assets/ and reference that.
+      // A dropped direct image can go through the image pipeline. A normal page
+      // URL must become its durable link card right away: attempting to treat a
+      // login-gated Instagram/X page as an image first delays (and can obscure)
+      // the fallback card.
       if (isHttpUrl) {
-        landRemoteImage(droppedUrl, origin)
+        if (isDirectImageUrl(droppedUrl)) {
+          landRemoteImage(droppedUrl, origin, { requireDownload: true })
+        } else {
+          landLinkPreview(droppedUrl, origin)
+        }
       }
     },
-    [landRemoteImage, toCanvas]
+    [landLinkPreview, landRemoteImage, toCanvas]
   )
 
   // Land raw clipboard bitmap bytes (a screenshot, or a copied image whose
@@ -272,9 +333,9 @@ export function useDrop(containerRef) {
         return true
       }
 
-      // 2. Text on the clipboard. A direct link to an image → image reference;
-      //    any other URL or plain text → a note holding it. Returns whether we
-      //    consumed the paste so callers can fall through to other handlers.
+      // 2. Text on the clipboard. Direct image URLs use the image path; normal
+      //    links (Instagram, X, editorial pages) become a thumbnail reference
+      //    when their Open Graph metadata is available, with text as fallback.
       if (markupUrl) {
         landRemoteImage(markupUrl, at)
         return true
@@ -282,6 +343,15 @@ export function useDrop(containerRef) {
 
       const text = (e.clipboardData?.getData('text/plain') || '').trim()
       if (!text) return false
+
+      if (/^https?:\/\//i.test(text)) {
+        landLinkPreview(text, at).then((ok) => {
+          if (!ok) {
+            addItem({ type: 'note', content: text, x: snapToGrid(at.x), y: snapToGrid(at.y), width: 200, height: 140 })
+          }
+        })
+        return true
+      }
 
       addItem({
         type: 'note',
@@ -293,7 +363,7 @@ export function useDrop(containerRef) {
       })
       return true
     },
-    [addItem, landPastedFile, landRemoteImage, toCanvas]
+    [addItem, landLinkPreview, landPastedFile, landRemoteImage, toCanvas]
   )
 
   return {

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Plus, FilmSlate } from '@phosphor-icons/react'
+import { Plus, FilmSlate, Export } from '@phosphor-icons/react'
 import {
   useStoryboardStore,
   ASPECTS,
@@ -17,7 +17,7 @@ import PanelCard from './PanelCard.jsx'
 //
 // Panels arrive by Send to Storyboard from the Dump Board (Ctrl B / right-click),
 // landing at the end, and are dragged into position from there.
-export default function StoryBoard() {
+export default function StoryBoard({ onOpenExport }) {
   const aspect = useStoryboardStore((s) => s.aspect)
   const panelSize = useStoryboardStore((s) => s.panelSize)
   const panels = useStoryboardStore((s) => s.panels)
@@ -101,6 +101,14 @@ export default function StoryBoard() {
         >
           <Plus size={14} />
           Add panel
+        </button>
+        <Sep />
+        <button
+          onClick={onOpenExport}
+          title="Export Process Brief"
+          className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg text-[12px] text-ink-2 hover:bg-surface-3 hover:text-ink transition-colors"
+        >
+          <Export size={14} /> Export
         </button>
       </div>
 

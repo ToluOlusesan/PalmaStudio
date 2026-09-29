@@ -23,6 +23,8 @@ contextBridge.exposeInMainWorld('palma', {
   copyAsset: (srcPath, targetDir, rel) => ipcRenderer.invoke('copy-asset', srcPath, targetDir, rel),
   deletePath: (p) => ipcRenderer.invoke('delete-path', p),
   downloadImageUrl: (url) => ipcRenderer.invoke('download-image-url', url),
+  previewLinkUrl: (url) => ipcRenderer.invoke('preview-link-url', url),
+  openExternalUrl: (url) => ipcRenderer.invoke('open-external-url', url),
 
   // Browser-extension clips relayed from the local ingest server. Returns an
   // unsubscribe fn.

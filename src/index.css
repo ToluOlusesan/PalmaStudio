@@ -32,7 +32,9 @@
 
   --color-warning: #292929;
 
-  --font-serif: 'DM Serif Display', Georgia, serif;
+  /* One calm type voice throughout. The legacy `font-serif` utility remains
+     for component compatibility, but now resolves to the same sans family. */
+  --font-serif: 'Inter', system-ui, sans-serif;
   --font-sans: 'Inter', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
 
@@ -441,6 +443,38 @@ body {
 
 .font-serif {
   font-family: var(--font-serif);
+}
+
+/* Focus keeps a single-line tool row even when its contextual rail is open. */
+.focus-workspace {
+  container: focus-workspace / inline-size;
+}
+@container focus-workspace (max-width: 650px) {
+  .focus-toolbar-stats,
+  .focus-toolbar-separator,
+  .focus-toolbar-label {
+    display: none;
+  }
+  .focus-toolbar-action {
+    width: 28px;
+    padding-inline: 0;
+    justify-content: center;
+  }
+}
+@container focus-workspace (max-width: 420px) {
+  .focus-palette-label {
+    display: none;
+  }
+}
+@keyframes focus-palette-update {
+  0%, 100% { outline: 0 solid transparent; }
+  45% { outline: 2px solid var(--accent); outline-offset: 2px; }
+}
+.focus-palette-trigger.palette-updated {
+  animation: focus-palette-update 900ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .focus-palette-trigger.palette-updated { animation: none; }
 }
 
 /* Scratchpad rich-text surface. A contentEditable region styled so headings,

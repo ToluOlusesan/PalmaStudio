@@ -14,16 +14,16 @@ hands. No cloud, no account, no lock-in.
 - **Dump Board** — an infinite canvas. Drag in images and video, paste
   screenshots and links, double-click for a note, connect items with arrows,
   group, multi-select, and Tidy the pile into rows.
-- **Focus** — sort references into zones (colour, texture, motion…) and pull a
-  direction out of the noise.
+- **Focus** — sort references into zones (colour, texture, motion…), see the
+  shared color vibe as an automatic palette, and pull a direction out of the noise.
 - **Scratchpad** — a per-project notebook that autosaves and flows into the
   exported brief.
 - **Library** — every project's media gathered onto one shelf, searchable and
   filterable, with one-click export into any project.
 - **Trash** — deleting a project moves it here; restore it any time, or purge it
   for good with an opt-in wipe of its files on disk.
-- **Export** — boards go out as high-res PNG or PDF (with connectors and notes);
-  palettes and a process brief come along too.
+- **Export** — boards go out as high-res PNG or PDF (with connectors and notes),
+  alongside a process brief when the project needs one.
 
 A companion **browser clipper** ([`extension/`](extension/)) sends clips straight
 into a project's Inbox.
@@ -81,8 +81,8 @@ extension/      browser clipper → project Inbox
 ## Design
 
 Monochrome shell — ink on paper — with one deliberate splash of colour in the
-canvas tools. DM Serif Display for identity and titles, Inter for UI, JetBrains
-Mono for captions and data. Motion is functional: short, eased, no spring; the
+canvas tools. Inter across the interface, JetBrains Mono for captions and data.
+Motion is functional: short, eased, no spring; the
 canvas responds 1:1.
 
 ---

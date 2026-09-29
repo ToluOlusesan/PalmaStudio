@@ -1,34 +1,32 @@
-import { seededColor } from '../utils/format.js'
+import { seededColor, thumbTint } from '../utils/format.js'
 
-// A project's visual identity at a glance: a captured snapshot of its Dump Board
-// (data URL) wins, then the first extracted palette colour as a flat fill, then a
-// deterministic seeded colour. Solid fills only — no gradients — so an empty
-// project reads as "its own" surface, not a placeholder. (The per-project tint
-// colour lives on the sidebar chip, not here — this always shows the real board
-// snapshot when there is one.)
-export default function Thumb({ project, className = '', style }) {
-  const { thumbnail, palette, id, name } = project
+// Transparent board images sit on theme paper. Empty projects get a quiet cover
+// with one small colour marker, rather than a large, arbitrary colour block.
+export default function Thumb({ project, className = '', style, compact = false }) {
+  const { thumbnail, palette, id, name, thumbColor } = project
+  const marker = thumbTint(thumbColor) || palette?.[0] || seededColor(id || name)
 
   if (thumbnail) {
     return (
-      <img
-        src={thumbnail}
-        alt=""
-        className={`w-full h-full object-cover ${className}`}
-        style={style}
-      />
+      <div className={`w-full h-full overflow-hidden ${className}`} style={{ background: 'var(--surface-canvas)', ...style }}>
+        <img src={thumbnail} alt="" className="w-full h-full object-cover" />
+      </div>
     )
   }
 
-  // Flat fill: the first extracted palette colour when we have one, else a
-  // deterministic seeded colour.
-  const background = palette?.[0] || seededColor(id || name)
-
   return (
     <div
-      className={`w-full h-full ${className}`}
-      style={{ background, ...style }}
+      className={`w-full h-full grid place-items-center relative text-ink-3 ${className}`}
+      style={{ background: 'var(--surface-canvas)', ...style }}
       aria-hidden="true"
-    />
+    >
+      <span className={`${compact ? 'text-[11px]' : 'text-[38px]'} font-light leading-none select-none opacity-50`}>
+        {(name || 'U').trim().charAt(0).toUpperCase()}
+      </span>
+      <span
+        className={`absolute ${compact ? 'bottom-[3px] left-[3px] right-[3px] h-[2px]' : 'bottom-4 left-4 w-7 h-[3px]'} rounded-full`}
+        style={{ background: marker }}
+      />
+    </div>
   )
 }

@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { X, CaretDown, Check, Sun, Moon } from '@phosphor-icons/react'
 import { useSessionStore } from '../store/sessionStore.js'
 import { useFocusStore } from '../store/focusStore.js'
+import { useStoryboardStore } from '../store/storyboardStore.js'
 import { saveDataUrl } from '../utils/platform.js'
 import { exportBoardImage, boardToPdfDataUri } from '../utils/captureBoard.js'
 import { renderFocusBoard, focusBoardPdf, processBriefPdf } from '../utils/focusExport.js'
@@ -16,36 +17,50 @@ import { renderFocusBoard, focusBoardPdf, processBriefPdf } from '../utils/focus
 const TARGETS = [
   { key: 'dumpboard', title: 'Dump Board', sub: 'Full canvas snapshot' },
   { key: 'focus', title: 'Focus Board', sub: 'Zones and references' },
-  { key: 'brief', title: 'Process Brief', sub: 'Dump Board → Focus → Notes' },
+  { key: 'brief', title: 'Process Brief', sub: 'Focus → sequence → notes' },
 ]
 
 export default function ExportModal({ open, onClose, context }) {
   // Pre-select the target matching the view it was opened from (Focus from the
   // Focus view, otherwise the Dump Board); never the Brief.
-  const [sel, setSel] = useState(context === 'moodboard' ? 'focus' : 'dumpboard')
+  const [sel, setSel] = useState(context === 'moodboard' ? 'focus' : context === 'storyboard' ? 'brief' : 'dumpboard')
   const [format, setFormat] = useState('png')
   const [scale, setScale] = useState(2)
   const [briefTheme, setBriefTheme] = useState('light')
   const [focusTheme, setFocusTheme] = useState('light')
   const [busy, setBusy] = useState(false)
   const [ddOpen, setDdOpen] = useState(false)
+  const [includeDump, setIncludeDump] = useState(false)
+  const [includeStoryboard, setIncludeStoryboard] = useState(true)
+  const [includeNotes, setIncludeNotes] = useState(true)
+  const [previewUrl, setPreviewUrl] = useState(null)
   const ddRef = useRef(null)
 
   // Which Focus zones to include (default all) — lets you export just the
   // zone(s) you want to share instead of the whole board every time.
   const zones = useFocusStore((s) => s.zones)
+  const panels = useStoryboardStore((s) => s.panels)
+  const session = useSessionStore((s) => s.session)
+  const hasNotes = !!session?.modules?.scratchpad?.content?.trim()
+  const hasDump = !!session?.modules?.dumpboard?.items?.length
   const [zoneSel, setZoneSel] = useState(() => new Set())
 
   useEffect(() => {
     if (!open) return
-    setSel(context === 'moodboard' ? 'focus' : 'dumpboard')
+    setSel(context === 'moodboard' ? 'focus' : context === 'storyboard' ? 'brief' : 'dumpboard')
     setFormat('png')
     setScale(2)
     setBriefTheme('light')
     setFocusTheme('light')
+    setIncludeDump(false)
+    setIncludeStoryboard(true)
+    setIncludeNotes(true)
+    setPreviewUrl(null)
     setDdOpen(false)
     setZoneSel(new Set(useFocusStore.getState().zones.map((z) => z.id)))
   }, [open, context])
+
+  useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl) }, [previewUrl])
 
   const toggleZone = (id) =>
     setZoneSel((prev) => {
@@ -59,10 +74,14 @@ export default function ExportModal({ open, onClose, context }) {
 
   useEffect(() => {
     if (!open) return
-    const onKey = (e) => e.key === 'Escape' && onClose()
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return
+      if (previewUrl) setPreviewUrl(null)
+      else onClose()
+    }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [open, onClose])
+  }, [open, onClose, previewUrl])
 
   // Close the target dropdown on any pointer-down outside it.
   useEffect(() => {
@@ -76,6 +95,40 @@ export default function ExportModal({ open, onClose, context }) {
 
   const isBrief = sel === 'brief'
   const target = TARGETS.find((t) => t.key === sel) || TARGETS[0]
+
+  const makeBrief = async () => {
+    useSessionStore.getState().flush()
+    const sess = useSessionStore.getState().session
+    const fs = useFocusStore.getState()
+    const story = useStoryboardStore.getState()
+    return processBriefPdf({
+      projectName: sess?.name || 'Untitled',
+      dumpItems: sess?.modules?.dumpboard?.items || [],
+      dumpEdges: sess?.modules?.dumpboard?.edges || [],
+      zones: fs.zones,
+      placed: fs.placed,
+      queue: fs.queue,
+      notes: fs.notes,
+      storyboard: { aspect: story.aspect, panels: story.panels },
+      scratchpad: sess?.modules?.scratchpad?.content || '',
+      includeDump,
+      includeStoryboard,
+      includeNotes,
+      theme: briefTheme,
+    })
+  }
+
+  const previewBrief = async () => {
+    setBusy(true)
+    try {
+      const uri = await makeBrief()
+      if (!uri) return
+      const blob = await (await fetch(uri)).blob()
+      setPreviewUrl(URL.createObjectURL(blob))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const run = async () => {
     setBusy(true)
@@ -102,7 +155,6 @@ export default function ExportModal({ open, onClose, context }) {
           const uri = await focusBoardPdf(pickedZones, fs.placed, fs.queue, fs.notes, {
             theme: focusTheme,
             projectName: sess?.name || 'Untitled',
-            direction: fs.direction,
           })
           if (uri) await saveDataUrl(`focus-board-${focusTheme}.pdf`, uri, [{ name: 'PDF', extensions: ['pdf'] }])
         } else {
@@ -110,18 +162,7 @@ export default function ExportModal({ open, onClose, context }) {
           if (url) await saveDataUrl(`focus-board-${focusTheme}.png`, url, [{ name: 'PNG Image', extensions: ['png'] }])
         }
       } else {
-        const uri = await processBriefPdf({
-          projectName: sess?.name || 'Untitled',
-          direction: fs.direction,
-          dumpItems,
-          dumpEdges,
-          zones: fs.zones,
-          placed: fs.placed,
-          queue: fs.queue,
-          notes: fs.notes,
-          scratchpad: sess?.modules?.scratchpad?.content || '',
-          theme: briefTheme,
-        })
+        const uri = await makeBrief()
         if (uri) await saveDataUrl(`process-brief-${briefTheme}.pdf`, uri, [{ name: 'PDF', extensions: ['pdf'] }])
       }
       onClose()
@@ -258,6 +299,18 @@ export default function ExportModal({ open, onClose, context }) {
                 </div>
               )}
 
+              {isBrief && (
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-[10px] uppercase tracking-[0.1em] text-ink-3 font-semibold">Include in brief</span>
+                  <p className="text-[11px] text-ink-3 leading-relaxed mb-1">
+                    Authored Focus zones and sequence lead the document.
+                  </p>
+                  <BriefOption label={`Storyboard${panels.length ? ` · ${panels.length} shots` : ''}`} checked={includeStoryboard} disabled={!panels.length} onChange={setIncludeStoryboard} />
+                  <BriefOption label="Project Notes" checked={includeNotes} disabled={!hasNotes} onChange={setIncludeNotes} />
+                  <BriefOption label="Dump Board appendix" checked={includeDump} disabled={!hasDump} onChange={setIncludeDump} />
+                </div>
+              )}
+
               {/* Focus zone picker — choose which zones make it into the export. */}
               {sel === 'focus' && zones.length > 0 && (
                 <div className="flex flex-col gap-1.5">
@@ -298,6 +351,15 @@ export default function ExportModal({ open, onClose, context }) {
               <button onClick={onClose} className="h-8 px-3.5 rounded-md text-[12px] text-ink-2 hover:text-ink hover:bg-[var(--sand-hover)] transition-colors">
                 Cancel
               </button>
+              {isBrief && (
+                <button
+                  onClick={previewBrief}
+                  disabled={busy}
+                  className="h-8 px-3.5 rounded-md text-[12px] text-ink-2 border-[0.5px] border-[var(--border-2)] hover:bg-[var(--sand-hover)] disabled:opacity-50 transition-colors"
+                >
+                  Preview
+                </button>
+              )}
               <button
                 onClick={run}
                 disabled={busy || (sel === 'focus' && zoneSel.size === 0)}
@@ -307,9 +369,31 @@ export default function ExportModal({ open, onClose, context }) {
               </button>
             </div>
           </motion.div>
+          {previewUrl && (
+            <div className="fixed inset-0 z-[95] flex items-center justify-center p-6" style={{ background: 'rgba(10,10,10,0.6)' }}>
+              <div className="w-full max-w-[1050px] h-full flex flex-col rounded-[12px] overflow-hidden border-[0.5px] border-[var(--border-2)] bg-surface">
+                <div className="h-12 shrink-0 flex items-center justify-between px-4 border-b-[0.5px] border-[var(--border)]">
+                  <span className="font-serif text-[17px] text-ink">Process Brief preview</span>
+                  <button onClick={() => setPreviewUrl(null)} aria-label="Close preview" className="grid place-items-center w-7 h-7 rounded-md text-ink-2 hover:text-ink hover:bg-surface-3">
+                    <X size={16} />
+                  </button>
+                </div>
+                <iframe title="Process Brief preview" src={previewUrl} className="flex-1 w-full bg-white" />
+              </div>
+            </div>
+          )}
         </motion.div>
       )}
     </AnimatePresence>
+  )
+}
+
+function BriefOption({ label, checked, disabled, onChange }) {
+  return (
+    <label className={`flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[12px] ${disabled ? 'text-ink-3 opacity-50' : 'text-ink cursor-pointer hover:bg-[var(--sand-hover)]'}`}>
+      <input type="checkbox" checked={checked && !disabled} disabled={disabled} onChange={(e) => onChange(e.target.checked)} className="w-3.5 h-3.5" style={{ accentColor: 'var(--accent)' }} />
+      {label}
+    </label>
   )
 }
 

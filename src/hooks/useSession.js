@@ -23,7 +23,10 @@ function recordSnapshot(projectId) {
   useProjectStore.getState().updateProject(projectId, { refCount })
 
   captureBoard(items).then((thumbnail) => {
-    if (thumbnail) useProjectStore.getState().updateProject(projectId, { thumbnail })
+    if (thumbnail) useProjectStore.getState().updateProject(projectId, {
+      thumbnail,
+      thumbnailFormat: 'transparent-webp-v1',
+    })
   })
 }
 

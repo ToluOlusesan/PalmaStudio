@@ -3,8 +3,9 @@ import { uid } from '../utils/id.js'
 import { useSessionStore } from './sessionStore.js'
 
 // Focus board state — zones (tinted frame areas), a queue of references promoted
-// from the Dump Board, and the items placed into zones, plus the project's
-// Direction statement and the board's own pan/zoom. Persisted into the session's
+// from the Dump Board, and the items placed into zones, plus the board's pan/zoom.
+// The legacy direction field is retained in saved sessions but has no UI.
+// Persisted into the session's
 // `focus` module slice (→ palma.json) via sessionStore.saveModule. Lives apart
 // from canvasStore because Send-to-Focus runs while the Dump Board is the active
 // board, so the queue must be reachable without Focus being mounted.
@@ -23,19 +24,13 @@ export const ZONE_COLORS = [
 ]
 
 const colorByName = (name) => ZONE_COLORS.find((c) => c.name === name) || ZONE_COLORS[0]
-// `vibrant` pushes saturation + lightness up for a richer, glowing tint (reserved
-// for a lit-zones treatment); the default sits flat on paper.
-export const zoneFill = (name, a = 0.1, vibrant = false) => {
+export const zoneFill = (name, a = 0.1) => {
   const c = colorByName(name)
-  const s = vibrant ? Math.min(100, c.s + 28) : c.s
-  const l = vibrant ? Math.min(72, c.l + 6) : c.l
-  return `hsla(${c.h}, ${s}%, ${l}%, ${a})`
+  return `hsla(${c.h}, ${c.s}%, ${c.l}%, ${a})`
 }
-export const zoneStroke = (name, a = 0.3, vibrant = false) => {
+export const zoneStroke = (name, a = 0.3) => {
   const c = colorByName(name)
-  const s = vibrant ? Math.min(100, c.s + 32) : c.s
-  const l = vibrant ? Math.min(70, c.l + 4) : c.l
-  return `hsla(${c.h}, ${s}%, ${l}%, ${a})`
+  return `hsla(${c.h}, ${c.s}%, ${c.l}%, ${a})`
 }
 
 // Three suggested starting zones, laid out in a loose grid in world space. Each
@@ -137,6 +132,7 @@ export const useFocusStore = create((set, get) => ({
     set((s) => ({
       queue: s.queue.filter((q) => q.id !== queueId),
       placed: s.placed.filter((p) => p.queueItemId !== queueId),
+      zones: s.zones.map((z) => z.heroQueueItemId === queueId ? { ...z, heroQueueItemId: null } : z),
     }))
     get().persist()
   },
@@ -159,6 +155,14 @@ export const useFocusStore = create((set, get) => ({
     set((s) => ({ zones: s.zones.map((z) => (z.id === id ? { ...z, ...patch } : z)) }))
   },
   commitZones: () => get().persist(),
+  setHero: (zoneId, queueItemId) => {
+    set((s) => ({
+      zones: s.zones.map((z) => z.id === zoneId
+        ? { ...z, heroQueueItemId: z.heroQueueItemId === queueItemId ? null : queueItemId }
+        : z),
+    }))
+    get().persist()
+  },
 
   // Zones may not overlap. Called live while a zone is dragged or resized: the
   // actively-manipulated zone (`fixedId`) stays put and every other zone is
@@ -263,18 +267,29 @@ export const useFocusStore = create((set, get) => ({
       } else {
         insertAt = without.indexOf(members[i])
       }
-      return { placed: [...without.slice(0, insertAt), updated, ...without.slice(insertAt)] }
+      return {
+        placed: [...without.slice(0, insertAt), updated, ...without.slice(insertAt)],
+        zones: item.zoneId === zoneId ? s.zones : s.zones.map((z) =>
+          z.id === item.zoneId && z.heroQueueItemId === item.queueItemId
+            ? { ...z, heroQueueItemId: null }
+            : z
+        ),
+      }
     })
     get().persist()
   },
   unplaceItem: (placedId) => {
-    set((s) => ({ placed: s.placed.filter((p) => p.id !== placedId) }))
+    set((s) => {
+      const item = s.placed.find((p) => p.id === placedId)
+      return {
+        placed: s.placed.filter((p) => p.id !== placedId),
+        zones: item ? s.zones.map((z) => z.id === item.zoneId && z.heroQueueItemId === item.queueItemId
+          ? { ...z, heroQueueItemId: null }
+          : z) : s.zones,
+      }
+    })
     get().persist()
   },
-
-  // ---- Direction --------------------------------------------------------
-  // State-only while typing; the DirectionBar calls persist() on blur.
-  setDirection: (text) => set({ direction: text }),
 
   // ---- Notes & comments ---------------------------------------------------
   // Freestanding note at world coords `at` (canvas centre by default).

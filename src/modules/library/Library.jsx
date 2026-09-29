@@ -2,6 +2,7 @@ import { useMemo, useState, useDeferredValue, memo, useRef, useEffect } from 're
 import { Stack, MagnifyingGlass, ImageBroken, X, Export, VideoCamera, Play } from '@phosphor-icons/react'
 import PageView from '../../components/PageView.jsx'
 import Topbar from '../../components/Topbar.jsx'
+import MediaLightbox from '../../components/MediaLightbox.jsx'
 import { useProjectStore } from '../../store/projectStore.js'
 import { sessionIO } from '../../utils/sessionIO.js'
 import { appendBoardItem } from '../../utils/boardOps.js'
@@ -27,6 +28,8 @@ export default function Library() {
   const [viewer, setViewer] = useState(null) // asset shown full-size
   const [exportFor, setExportFor] = useState(null) // asset awaiting a destination
   const [toast, setToast] = useState(null)
+  const shelfRef = useRef(null)
+  const [viewport, setViewport] = useState({ top: 0, width: 0, height: 0 })
 
   const assets = useMemo(() => {
     const out = []
@@ -63,6 +66,28 @@ export default function Library() {
       ),
     [assets, filter, deferredQuery]
   )
+
+  // Thousands of references should not mean thousands of live card components
+  // and hover targets. The square previews make grid rows predictable, so only
+  // the visible rows (plus a small scroll buffer) need to be mounted.
+  useEffect(() => {
+    const shelf = shelfRef.current
+    if (!shelf) return
+    const measure = () => setViewport((v) => ({ ...v, width: shelf.clientWidth, height: shelf.clientHeight }))
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(shelf)
+    return () => observer.disconnect()
+  }, [])
+  const innerWidth = Math.max(0, viewport.width - 56) // account for the shelf's px-7 padding
+  const columns = Math.max(1, Math.floor((innerWidth + 12) / 152))
+  const cardWidth = Math.max(140, (innerWidth - 12 * (columns - 1)) / columns)
+  const rowPitch = cardWidth + 52
+  const totalRows = Math.ceil(shown.length / columns)
+  const firstRow = Math.max(0, Math.floor(viewport.top / rowPitch) - 2)
+  const lastRow = Math.min(totalRows, Math.ceil((viewport.top + viewport.height) / rowPitch) + 2)
+  const startIndex = firstRow * columns
+  const endIndex = Math.min(shown.length, lastRow * columns)
 
   // Copy an asset into a destination project's board. The file is duplicated into
   // that project's assets/ so it's self-contained.
@@ -137,7 +162,11 @@ export default function Library() {
         <span className="ml-auto text-[11px] text-ink-3">{shown.length} assets</span>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-7 py-5">
+      <div
+        ref={shelfRef}
+        onScroll={(e) => setViewport((v) => ({ ...v, top: e.currentTarget.scrollTop }))}
+        className="flex-1 overflow-y-auto px-7 py-5"
+      >
         {shown.length === 0 ? (
           <div className="h-full min-h-[40vh] grid place-items-center text-center">
             <div className="max-w-[300px]">
@@ -150,16 +179,18 @@ export default function Library() {
             </div>
           </div>
         ) : (
-          <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(140px,1fr))]">
-            {shown.map((a) => (
+          <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
+            {firstRow > 0 && <div aria-hidden style={{ gridColumn: '1 / -1', height: firstRow * rowPitch - 12 }} />}
+            {shown.slice(startIndex, endIndex).map((a) => (
               <AssetCard key={`${a.projectId}:${a.id}`} asset={a} onOpen={setViewer} onExport={setExportFor} />
             ))}
+            {lastRow < totalRows && <div aria-hidden style={{ gridColumn: '1 / -1', height: Math.max(0, (totalRows - lastRow) * rowPitch - 12) }} />}
           </div>
         )}
       </div>
 
       {/* Full-size viewer */}
-      {viewer && <Lightbox asset={viewer} onClose={() => setViewer(null)} />}
+      {viewer && <MediaLightbox asset={viewer} onClose={() => setViewer(null)} />}
 
       {/* Export-to-project picker */}
       {exportFor && (
@@ -273,36 +304,6 @@ function AssetThumb({ asset, near }) {
         </div>
       )}
       {isVideo && <PlayBadge />}
-    </div>
-  )
-}
-
-// View-only full-size overlay.
-function Lightbox({ asset, onClose }) {
-  return (
-    <div
-      className="fixed inset-0 z-[140] flex flex-col items-center justify-center p-10"
-      style={{ background: 'rgba(8,8,8,0.86)' }}
-      onClick={onClose}
-    >
-      <button
-        onClick={onClose}
-        aria-label="Close"
-        className="absolute top-5 right-5 grid place-items-center w-9 h-9 rounded-full text-ink-2 hover:text-ink hover:bg-[var(--sand-hover)] transition-colors"
-      >
-        <X size={20} />
-      </button>
-      <div className="max-w-[90vw] max-h-[82vh] flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
-        {asset.type === 'image' ? (
-          <img src={asset.src} alt={asset.label} className="max-w-full max-h-[82vh] object-contain rounded-[6px]" />
-        ) : (
-          <video src={asset.src} controls autoPlay className="max-w-full max-h-[82vh] rounded-[6px]" />
-        )}
-      </div>
-      <div className="mt-4 text-center" onClick={(e) => e.stopPropagation()}>
-        <div className="text-[13px] text-ink">{asset.label}</div>
-        <div className="font-serif text-[12px] text-ink-3 mt-0.5">{asset.projectName}</div>
-      </div>
     </div>
   )
 }

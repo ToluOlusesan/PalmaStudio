@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Plus, MagnifyingGlass, FolderOpen } from '@phosphor-icons/react'
@@ -8,6 +8,8 @@ import Button from '../../components/Button.jsx'
 import Modal from '../../components/Modal.jsx'
 import ProjectCard from './ProjectCard.jsx'
 import { useProjectStore } from '../../store/projectStore.js'
+import { sessionIO } from '../../utils/sessionIO.js'
+import { captureBoard } from '../../utils/captureBoard.js'
 import { isDesktop, pickDirectory, ensureProject, scanProjects, getDefaultProjectDir } from '../../utils/platform.js'
 
 export default function Dashboard() {
@@ -24,6 +26,34 @@ export default function Dashboard() {
   const [confirmDelete, setConfirmDelete] = useState(null)
   const [query, setQuery] = useState('')
   const [importMsg, setImportMsg] = useState('')
+  const previewAttempts = useRef(new Set())
+
+  // Existing project summaries contain JPEG covers with light paper baked in.
+  // Rebuild them from their saved boards in the background, once per dashboard
+  // visit. No extra thumbnail is stored: one alpha WebP works in both themes.
+  useEffect(() => {
+    const pending = projects.filter((p) =>
+      !p.deleted && p.thumbnailFormat !== 'transparent-webp-v1' && !previewAttempts.current.has(p.id)
+    )
+    pending.forEach((p) => previewAttempts.current.add(p.id))
+    if (!pending.length) return
+
+    const refresh = async () => {
+      for (const project of pending) {
+        const items = sessionIO.readSession(project.id)?.modules?.dumpboard?.items || []
+        if (!items.some((item) => item.type === 'image' && item.src && !item.missing)) continue
+        const thumbnail = await captureBoard(items)
+        const current = useProjectStore.getState().projectById(project.id)
+        if (thumbnail && current && !current.deleted && current.thumbnailFormat !== 'transparent-webp-v1') {
+          useProjectStore.getState().updateProject(project.id, {
+            thumbnail,
+            thumbnailFormat: 'transparent-webp-v1',
+          })
+        }
+      }
+    }
+    refresh()
+  }, [projects])
 
   // The sidebar "New project" button routes here with ?new=1.
   useEffect(() => {
@@ -103,7 +133,7 @@ export default function Dashboard() {
           <EmptyState hasProjects={sorted.length > 0} onNew={() => setCreating(true)} />
         ) : (
           <motion.div
-            className="grid gap-4 grid-cols-[repeat(auto-fill,minmax(170px,1fr))]"
+            className="grid gap-4 grid-cols-[repeat(auto-fill,minmax(205px,1fr))]"
             variants={{ hidden: {}, show: { transition: { staggerChildren: 0.035 } } }}
             initial="hidden"
             animate="show"

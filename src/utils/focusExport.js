@@ -3,6 +3,8 @@
 // an offscreen canvas. The Process Brief assembles a multi-page PDF (jsPDF).
 import { zoneLayout, PAD } from './focusLayout.js'
 import { zoneFill, zoneStroke } from '../store/focusStore.js'
+import { aspectRatio, formatRuntime } from '../store/storyboardStore.js'
+import { panelPicture } from './cropGeometry.js'
 import { renderBoard, logoDataUrl, LOGO_ASPECT } from './captureBoard.js'
 
 const MAX_EDGE = 14000
@@ -66,6 +68,22 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.closePath()
 }
 
+function drawCanvasLines(ctx, text, x, y, maxWidth, lineHeight, maxLines = 2) {
+  const words = (text || '').trim().split(/\s+/).filter(Boolean)
+  let line = ''
+  let lines = 0
+  for (const word of words) {
+    const next = line ? `${line} ${word}` : word
+    if (line && ctx.measureText(next).width > maxWidth) {
+      ctx.fillText(line, x, y + lines * lineHeight)
+      lines++
+      if (lines >= maxLines) return
+      line = word
+    } else line = next
+  }
+  if (line && lines < maxLines) ctx.fillText(line, x, y + lines * lineHeight)
+}
+
 // Render a set of zones (+ their members) to a data URL. Used for the whole
 // Focus board and, per-zone, for the Process Brief pages.
 export async function renderFocusBoard(zones, placed, queue, { max = 2400, scale = 2, mime = 'image/png', quality = 0.92, theme = 'light' } = {}) {
@@ -108,17 +126,22 @@ export async function renderFocusBoard(zones, placed, queue, { max = 2400, scale
   }
 
   for (const z of zones) {
-    roundRect(ctx, ox(z.x), oy(z.y), z.width * s, z.height * s, 12 * s)
-    ctx.fillStyle = zoneFill(z.color, dark ? 0.2 : 0.1, dark)
+    roundRect(ctx, ox(z.x), oy(z.y), z.width * s, z.height * s, 8 * s)
+    ctx.fillStyle = zoneFill(z.color, dark ? 0.12 : 0.07)
     ctx.fill()
-    ctx.lineWidth = Math.max(1, 1.5 * s)
-    ctx.strokeStyle = zoneStroke(z.color, dark ? 0.6 : 0.35, dark)
+    ctx.lineWidth = Math.max(1, s)
+    ctx.strokeStyle = zoneStroke(z.color, dark ? 0.4 : 0.25)
     ctx.stroke()
 
     ctx.fillStyle = pal.inkText
     ctx.font = `600 ${11 * s}px Inter, system-ui, sans-serif`
     ctx.textBaseline = 'middle'
     ctx.fillText((z.name || '').toUpperCase(), ox(z.x) + PAD * s, oy(z.y) + 15 * s)
+    if (z.takeaway) {
+      ctx.font = `${11 * s}px Inter, system-ui, sans-serif`
+      ctx.textBaseline = 'top'
+      drawCanvasLines(ctx, z.takeaway, ox(z.x) + PAD * s, oy(z.y) + 34 * s, (z.width - PAD * 2) * s, 15 * s)
+    }
 
     const members = placed.filter((p) => p.zoneId === z.id)
     const lay = zoneLayout(z, members.length)
@@ -152,10 +175,17 @@ export async function renderFocusBoard(zones, placed, queue, { max = 2400, scale
         const text = (entry.content || entry.label || '').slice(0, 120)
         ctx.fillText(text, cx + 6 * s, cy + 6 * s, cw - 12 * s)
       }
-      ctx.lineWidth = Math.max(0.5, 0.5 * s)
-      ctx.strokeStyle = pal.inkSoft
+      const key = z.heroQueueItemId === members[i].queueItemId
+      ctx.lineWidth = Math.max(0.5, (key ? 2 : 0.5) * s)
+      ctx.strokeStyle = key ? pal.ink : pal.inkSoft
       roundRect(ctx, cx, cy, cw, ch, 6 * s)
       ctx.stroke()
+      if (key) {
+        ctx.fillStyle = pal.ink
+        ctx.font = `600 ${9 * s}px Inter, system-ui, sans-serif`
+        ctx.textBaseline = 'top'
+        ctx.fillText('KEY', cx + 7 * s, cy + 7 * s)
+      }
     }
   }
 
@@ -172,7 +202,7 @@ export async function renderFocusBoard(zones, placed, queue, { max = 2400, scale
 // grid of that zone's references followed by its pinned notes and comments. This
 // replaced the old flat single-image dump, which was un-styled and dropped the
 // annotations entirely. `theme` ('light' | 'dark') recolours the whole document.
-export async function focusBoardPdf(zones, placed, queue, notes = [], { theme = 'light', projectName, direction } = {}) {
+export async function focusBoardPdf(zones, placed, queue, notes = [], { theme = 'light', projectName } = {}) {
   if (!zones.length) return null
   const dark = theme === 'dark'
   const { jsPDF } = await import('jspdf')
@@ -181,7 +211,8 @@ export async function focusBoardPdf(zones, placed, queue, notes = [], { theme = 
   const H = pdf.internal.pageSize.getHeight()
   const M = 48
   const [logo, grain] = await Promise.all([logoPng(dark ? '#f4f4f4' : '#0a0a0a', 120), Promise.resolve(grainTileDataUrl())])
-  const { paper, eyebrow, footer, coverPage, placeTop, drawAnnotations } = makeBriefChrome({ pdf, W, H, M, dark, logo, grain })
+  const chrome = makeBriefChrome({ pdf, W, H, M, dark, logo, grain })
+  const { paper, eyebrow, coverPage } = chrome
 
   if (document.fonts?.ready) {
     try {
@@ -192,7 +223,7 @@ export async function focusBoardPdf(zones, placed, queue, notes = [], { theme = 
   }
 
   // Cover page, same as the Process Brief opens with — then one page per zone.
-  coverPage('Focus Board', projectName, direction)
+  coverPage('Focus Board', projectName)
 
   let pageNum = 1
   for (const z of zones) {
@@ -204,22 +235,7 @@ export async function focusBoardPdf(zones, placed, queue, notes = [], { theme = 
     pageNum++
     eyebrow(z.name || 'Zone', pageNum)
 
-    const top = M + 28
-    const boxW = W - 2 * M
-    const boxH = H - top - M - 18
-    const maxY = H - M - 18
-    let cursorY = top
-    if (members.length) {
-      // 'cover' zooms each reference to fill its cell so they read larger.
-      const gridBoxH = anns.length ? boxH * 0.6 : boxH
-      cursorY = (await placeTop(await renderMemberGrid(members, queue, { theme, fit: 'cover' }), top, boxW, gridBoxH)) + 20
-    }
-    if (anns.length) drawAnnotations(anns, cursorY, boxW, maxY)
-
-    const parts = []
-    if (members.length) parts.push(`${members.length} reference${members.length === 1 ? '' : 's'}`)
-    if (anns.length) parts.push(`${anns.length} note${anns.length === 1 ? '' : 's'}`)
-    footer(parts.join(' · ') || 'Empty zone')
+    await drawZoneDecision({ pdf, W, H, M, z, members, queue, anns, theme, fit: 'cover', chrome })
   }
 
   return pdf.output('datauristring')
@@ -227,7 +243,7 @@ export async function focusBoardPdf(zones, placed, queue, notes = [], { theme = 
 
 // A clean contact-sheet grid of a zone's members — used for the Process Brief's
 // per-zone pages (tidier than rendering the literal zone box).
-export async function renderMemberGrid(members, queue, { scale = 2, max = 2200, theme = 'light', fit = 'contain' } = {}) {
+export async function renderMemberGrid(members, queue, { scale = 2, max = 2200, theme = 'light', fit = 'contain', heroQueueItemId = null } = {}) {
   const pal = THEME[theme] || THEME.light
   // 'cover' fills each cell (references read larger / more zoomed-in, lightly
   // cropped); 'contain' letterboxes them uncropped (the Process Brief default).
@@ -302,10 +318,19 @@ export async function renderMemberGrid(members, queue, { scale = 2, max = 2200, 
       }
       if (ty <= y + h - 18 * s) ctx.fillText(line, x + 12 * s, ty)
     }
-    ctx.lineWidth = Math.max(0.5, 0.75 * s)
-    ctx.strokeStyle = pal.inkSoft
+    const key = entry.id === heroQueueItemId
+    ctx.lineWidth = Math.max(0.5, (key ? 2 : 0.75) * s)
+    ctx.strokeStyle = key ? pal.ink : pal.inkSoft
     roundRect(ctx, x, y, w, h, 8 * s)
     ctx.stroke()
+    if (key) {
+      ctx.fillStyle = pal.ink
+      ctx.fillRect(x + 7 * s, y + 7 * s, 36 * s, 17 * s)
+      ctx.fillStyle = pal.bg
+      ctx.font = `600 ${9 * s}px Inter, system-ui, sans-serif`
+      ctx.textBaseline = 'middle'
+      ctx.fillText('KEY', x + 15 * s, y + 16 * s)
+    }
   }
   try {
     return canvas.toDataURL('image/png', 0.92)
@@ -433,8 +458,8 @@ function makeBriefChrome({ pdf, W, H, M, dark, logo, grain }) {
     pdf.addImage(dataUrl, 'PNG', M + (boxW - w) / 2, top, w, h)
     return top + h
   }
-  // The document's cover: paper + the small mark, an eyebrow label, a big serif
-  // title, a short rule, and an optional subtitle (the project's direction),
+  // The document's cover: paper + the small mark, an eyebrow label, a bold sans
+  // title, a short rule, and an optional subtitle,
   // closed by the shared footer. Shared so the Process Brief and the Focus-board
   // export open the same way.
   const coverPage = (label, title, subtitle) => {
@@ -444,7 +469,7 @@ function makeBriefChrome({ pdf, W, H, M, dark, logo, grain }) {
     pdf.setFontSize(8.5)
     pdf.setTextColor(INK)
     pdf.text((label || '').toUpperCase(), M, M + 48, { charSpace: 2 })
-    pdf.setFont('times', 'bold')
+    pdf.setFont('helvetica', 'bold')
     pdf.setFontSize(40)
     pdf.setTextColor(INK)
     const titleLines = pdf.splitTextToSize(title || 'Untitled', W - 2 * M)
@@ -498,22 +523,145 @@ function makeBriefChrome({ pdf, W, H, M, dark, logo, grain }) {
   return { INK, INK_SOFT, RULE, paper, eyebrow, footer, coverPage, placeCentered, placeTop, drawAnnotations }
 }
 
-// A4-landscape Process Brief: Cover → Dump Board → one page per zone → Notes
-// (Scratchpad) → a closing "Powered by Palma" page. Every page — including the
+// One authored visual principle. The key reference leads the contact sheet and
+// receives a mark, while the takeaway sits above the evidence at reading size.
+async function drawZoneDecision({ pdf, W, H, M, z, members, queue, anns, theme, fit = 'contain', chrome }) {
+  const { INK, INK_SOFT, placeTop, drawAnnotations, footer } = chrome
+  let top = M + 28
+  if (z.takeaway?.trim()) {
+    pdf.setFont('helvetica', 'normal')
+    pdf.setFontSize(12)
+    pdf.setTextColor(INK)
+    const lines = pdf.splitTextToSize(z.takeaway.trim(), W - 2 * M).slice(0, 3)
+    pdf.text(lines, M, top + 10, { lineHeightFactor: 1.3 })
+    top += lines.length * 16 + 16
+  } else if (members.length) {
+    pdf.setFont('helvetica', 'italic')
+    pdf.setFontSize(10)
+    pdf.setTextColor(INK_SOFT)
+    pdf.text('Visual references', M, top + 8)
+    top += 22
+  }
+
+  const ordered = [...members].sort((a, b) =>
+    Number(b.queueItemId === z.heroQueueItemId) - Number(a.queueItemId === z.heroQueueItemId)
+  )
+  const boxW = W - 2 * M
+  const maxY = H - M - 18
+  const gridBoxH = Math.max(72, maxY - top - (anns.length ? 92 : 0))
+  let cursorY = top
+  if (ordered.length) {
+    const grid = await renderMemberGrid(ordered, queue, { theme, fit, heroQueueItemId: z.heroQueueItemId })
+    cursorY = (await placeTop(grid, top, boxW, gridBoxH)) + 20
+  }
+  if (anns.length && cursorY < maxY - 20) drawAnnotations(anns, cursorY, boxW, maxY)
+  const parts = []
+  if (members.length) parts.push(`${members.length} reference${members.length === 1 ? '' : 's'}`)
+  if (z.heroQueueItemId && members.some((m) => m.queueItemId === z.heroQueueItemId)) parts.push('key reference marked')
+  if (anns.length) parts.push(`${anns.length} note${anns.length === 1 ? '' : 's'}`)
+  footer(parts.join(' · ') || 'Empty zone')
+}
+
+function loadVideoFrame(src) {
+  return new Promise((resolve) => {
+    const video = document.createElement('video')
+    let done = false
+    const finish = (value) => {
+      if (done) return
+      done = true
+      clearTimeout(timer)
+      resolve(value)
+    }
+    const timer = setTimeout(() => finish(null), 3500)
+    video.muted = true
+    video.preload = 'auto'
+    video.onloadeddata = () => finish(video)
+    video.onerror = () => finish(null)
+    video.src = src
+  })
+}
+
+async function storyboardFrame(panel, w, h, theme) {
+  const c = document.createElement('canvas')
+  c.width = Math.max(1, Math.round(w * 2))
+  c.height = Math.max(1, Math.round(h * 2))
+  const ctx = c.getContext('2d')
+  ctx.fillStyle = (THEME[theme] || THEME.light).card
+  ctx.fillRect(0, 0, c.width, c.height)
+  if (panel.src) {
+    const media = await loadImage(panel.src) || await loadVideoFrame(panel.src)
+    const natW = media?.naturalWidth || media?.videoWidth
+    const natH = media?.naturalHeight || media?.videoHeight
+    if (natW && natH) {
+      const picture = panelPicture(panel, c.width, c.height, natW, natH)
+      try { ctx.drawImage(media, picture.x, picture.y, picture.w, picture.h) } catch { /* missing frame */ }
+    }
+  }
+  try { return c.toDataURL('image/png') } catch { return null }
+}
+
+async function addStoryboardPages({ pdf, W, H, M, panels, aspect, pageNum, chrome, theme }) {
+  const { INK, INK_SOFT, paper, eyebrow, footer } = chrome
+  const ratio = aspectRatio(aspect)
+  const runtime = formatRuntime(panels.reduce((sum, p) => sum + (Number(p.duration) || 0), 0))
+  const cellW = (W - 2 * M - 26) / 2
+  const cellH = (H - 2 * M - 42) / 2
+  for (let start = 0; start < panels.length; start += 4) {
+    pdf.addPage()
+    paper()
+    eyebrow('Storyboard', ++pageNum)
+    for (let i = 0; i < 4 && start + i < panels.length; i++) {
+      const panel = panels[start + i]
+      const col = i % 2
+      const row = Math.floor(i / 2)
+      const x = M + col * (cellW + 26)
+      const y = M + 27 + row * (cellH + 12)
+      // Reserve enough of each cell for its caption. A previous fixed caption
+      // y-position collided with tall (portrait / 4:5) story frames.
+      const maxFrameH = cellH - 48
+      const frameH = Math.min(maxFrameH, cellW / ratio)
+      const frameW = frameH * ratio
+      const frameX = x + (cellW - frameW) / 2
+      const frame = await storyboardFrame(panel, frameW, frameH, theme)
+      if (frame) pdf.addImage(frame, 'PNG', frameX, y, frameW, frameH)
+      pdf.setDrawColor(theme === 'dark' ? 90 : 210)
+      pdf.rect(frameX, y, frameW, frameH)
+      const captionY = y + frameH + 14
+      pdf.setFont('helvetica', 'bold')
+      pdf.setFontSize(10)
+      pdf.setTextColor(INK)
+      pdf.text(String(start + i + 1).padStart(2, '0'), x, captionY)
+      pdf.text(pdf.splitTextToSize(panel.action || panel.label || 'Untitled shot', cellW - 52)[0], x + 28, captionY)
+      pdf.setFont('helvetica', 'normal')
+      pdf.setFontSize(9)
+      pdf.setTextColor(INK_SOFT)
+      pdf.text(pdf.splitTextToSize(panel.camera || ' ', cellW - 52)[0], x + 28, captionY + 14)
+      pdf.text(`${Number(panel.duration) || 0}s`, x + 28, captionY + 28)
+    }
+    footer(`${panels.length} shots · ${runtime} runtime`)
+  }
+  return pageNum
+}
+
+// A4-landscape Process Brief: Cover → visual decisions → optional sequence and
+// supporting material → closing page. Every page — including the
 // cover — shares the same paper-textured background and footer bar (logo +
 // caption), so the document reads as one cohesive object rather than a stack of
 // mismatched pages. `theme` ('light' | 'dark') recolours the whole brief; the
 // Palma mark and grain texture both adapt.
 export async function processBriefPdf({
   projectName,
-  direction,
   dumpItems = [],
   dumpEdges = [],
   zones = [],
   placed = [],
   queue = [],
   notes = [],
+  storyboard = null,
   scratchpad = '',
+  includeDump = false,
+  includeStoryboard = true,
+  includeNotes = true,
   theme = 'light',
 }) {
   const dark = theme === 'dark'
@@ -529,54 +677,34 @@ export async function processBriefPdf({
 
   const [logo, grain] = await Promise.all([logoPng(dark ? '#f4f4f4' : '#0a0a0a', 120), Promise.resolve(grainTileDataUrl())])
   // Shared with the Focus-board export so both documents look identical.
-  const { INK, INK_SOFT, paper, eyebrow, footer, coverPage, placeCentered, placeTop, drawAnnotations } =
-    makeBriefChrome({ pdf, W, H, M, dark, logo, grain })
+  const chrome = makeBriefChrome({ pdf, W, H, M, dark, logo, grain })
+  const { INK, INK_SOFT, paper, eyebrow, footer, coverPage, placeCentered } = chrome
 
   // --- Cover ---
-  coverPage('Process Brief', projectName, direction)
+  coverPage('Process Brief', projectName)
 
-  // --- The Dump ---
-  const dumpImg = await renderBoard(dumpItems, { max: 2400, mime: 'image/png', maxScale: 2, includeText: true, edges: dumpEdges, theme })
-  pdf.addPage()
-  paper()
-  pageNum++
-  eyebrow('Dump Board', pageNum)
-  await placeCentered(dumpImg)
-  footer('All references collected')
-
-  // --- One page per zone (contact-sheet grid, then its pinned comments) ---
+  // --- The decisions lead. Each zone gives its takeaway and evidence. ---
   for (const z of zones) {
     const members = placed.filter((p) => p.zoneId === z.id)
-    // Both pinned notes and comments for this zone (either annotates the board).
     const anns = notes.filter((n) => n.zoneId === z.id && n.content?.trim())
-    if (!members.length && !anns.length) continue
+    if (!members.length && !anns.length && !z.takeaway?.trim()) continue
     pdf.addPage()
     paper()
     pageNum++
     eyebrow(z.name || 'Zone', pageNum)
+    await drawZoneDecision({ pdf, W, H, M, z, members, queue, anns, theme, chrome })
+  }
 
-    const top = M + 28
-    const boxW = W - 2 * M
-    const boxH = H - top - M - 18
-    const maxY = H - M - 18
-    let cursorY = top
-    if (members.length) {
-      // Leave room below the grid for annotations when the zone has any, rather
-      // than letting the grid claim the whole page and centre itself over them.
-      const gridBoxH = anns.length ? boxH * 0.6 : boxH
-      cursorY = (await placeTop(await renderMemberGrid(members, queue, { theme }), top, boxW, gridBoxH)) + 20
-    }
-    if (anns.length) drawAnnotations(anns, cursorY, boxW, maxY)
-
-    const parts = []
-    if (members.length) parts.push(`${members.length} reference${members.length === 1 ? '' : 's'}`)
-    if (anns.length) parts.push(`${anns.length} note${anns.length === 1 ? '' : 's'}`)
-    footer(parts.join(' · '))
+  if (includeStoryboard && storyboard?.panels?.length) {
+    pageNum = await addStoryboardPages({
+      pdf, W, H, M, panels: storyboard.panels, aspect: storyboard.aspect,
+      pageNum, chrome, theme,
+    })
   }
 
   // --- Notes (the project's Scratchpad, if it has anything written) ---
   const notesText = htmlToPlainText(scratchpad)
-  if (notesText) {
+  if (includeNotes && notesText) {
     pdf.setFont('helvetica', 'normal')
     pdf.setFontSize(11)
     const bodyW = W - 2 * M
@@ -600,6 +728,16 @@ export async function processBriefPdf({
     }
   }
 
+  if (includeDump && dumpItems.length) {
+    const dumpImg = await renderBoard(dumpItems, { max: 2400, mime: 'image/png', maxScale: 2, includeText: true, edges: dumpEdges, theme })
+    pdf.addPage()
+    paper()
+    pageNum++
+    eyebrow('Collected references', pageNum)
+    await placeCentered(dumpImg)
+    footer('Research canvas · appendix')
+  }
+
   // --- Closing page ---
   pdf.addPage()
   paper()
@@ -608,7 +746,7 @@ export async function processBriefPdf({
   const closingText = 'POWERED BY PALMA'
   const closingSize = 9
   const closingSpace = 2 // pt of tracking between characters (see below)
-  pdf.setFont('times', 'bold') // the brand serif, matching the cover title
+  pdf.setFont('helvetica', 'bold')
   pdf.setFontSize(closingSize)
   // jsPDF's `align: 'center'` does not account for a custom `charSpace` when
   // centring, so the two together silently push the text off true centre —

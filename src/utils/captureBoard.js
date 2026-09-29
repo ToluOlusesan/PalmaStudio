@@ -232,6 +232,7 @@ export async function renderBoard(
     watermark = false,
     edges = [],
     theme = 'light',
+    transparent = false,
   } = {}
 ) {
   const pal = THEME[theme] || THEME.light
@@ -284,8 +285,10 @@ export async function renderBoard(
   canvas.width = cw
   canvas.height = ch
   const ctx = canvas.getContext('2d')
-  ctx.fillStyle = pal.bg
-  ctx.fillRect(0, 0, cw, ch)
+  if (!transparent) {
+    ctx.fillStyle = pal.bg
+    ctx.fillRect(0, 0, cw, ch)
+  }
 
   // Make sure the UI font is ready before drawing any text.
   if (includeText && document.fonts?.ready) {
@@ -296,6 +299,7 @@ export async function renderBoard(
     }
   }
 
+  let drawnImages = 0
   for (const it of drawable) {
     const dx = (it.x - minX + pad) * scale
     const dy = (it.y - minY + pad) * scale
@@ -306,6 +310,7 @@ export async function renderBoard(
       if (!img) continue
       try {
         drawItemImage(ctx, img, it, dx, dy, dw, dh)
+        drawnImages += 1
       } catch {
         /* tainted (cross-origin) image — skip it */
       }
@@ -323,6 +328,10 @@ export async function renderBoard(
 
   if (watermark) await drawWatermark(ctx, cw, ch)
 
+  // A missing/offline source must not replace a project's last good cover with
+  // an apparently empty thumbnail during a background refresh.
+  if (transparent && drawnImages === 0) return null
+
   try {
     return canvas.toDataURL(mime, quality)
   } catch {
@@ -330,8 +339,11 @@ export async function renderBoard(
   }
 }
 
-// Small JPEG miniature for dashboard cards — images only.
-export const captureBoard = (items = []) => renderBoard(items, { max: MAX })
+// One alpha miniature serves both themes. The card supplies the paper colour,
+// while image pixels remain untouched. WebP keeps this smaller than storing a
+// separate light and dark JPEG in the already size-sensitive project index.
+export const captureBoard = (items = []) =>
+  renderBoard(items, { max: MAX, mime: 'image/webp', quality: 0.76, transparent: true })
 
 // Lossless PNG for "Export board" — includes notes + comments and the connector
 // arrows between items. `scale` (1 or 2) is the resolution multiplier: 2× yields

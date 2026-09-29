@@ -266,6 +266,27 @@ export async function downloadImageUrl(url) {
   }
 }
 
+// Resolve a normal web page to its Open Graph / Twitter Card thumbnail. This
+// is deliberately desktop-only: the native process can retrieve metadata from
+// social hosts without browser CORS getting in the way.
+export async function previewLinkUrl(url) {
+  if (!/^https?:\/\//i.test(url || '') || !isElectron() || !electron().previewLinkUrl) return null
+  try {
+    return await electron().previewLinkUrl(url)
+  } catch {
+    return null
+  }
+}
+
+export async function openExternalUrl(url) {
+  if (!/^https?:\/\//i.test(url || '') || !isElectron() || !electron().openExternalUrl) return false
+  try {
+    return await electron().openExternalUrl(url)
+  } catch {
+    return false
+  }
+}
+
 // Does this item path point at a real on-disk file (so we can reveal/open it)?
 // Excludes urls / data / blob / asset-protocol refs.
 export function isDiskPath(p) {

@@ -169,6 +169,98 @@ async function downloadBestImage(rawUrl, { maxBytes = 64 * 1024 * 1024, budgetMs
   return null
 }
 
+// A pasted social URL is rarely an image URL itself. Most publishers expose a
+// small, purpose-made preview image through Open Graph or Twitter Card meta
+// tags, though. Resolve that image in the native layer (where CORS and hotlink
+// restrictions don't get in the way) and then hand it through the same
+// full-resolution image downloader used for ordinary pasted images.
+function htmlEntityDecode(value = '') {
+  return value
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+}
+
+function metaContent(html, names) {
+  const wanted = new Set(names.map((name) => name.toLowerCase()))
+  const tags = html.match(/<meta\b[^>]*>/gi) || []
+  for (const tag of tags) {
+    const key = /\b(?:property|name)\s*=\s*["']([^"']+)["']/i.exec(tag)?.[1]?.toLowerCase()
+    if (!key || !wanted.has(key)) continue
+    const value = /\bcontent\s*=\s*["']([^"']*)["']/i.exec(tag)?.[1]
+    if (value) return htmlEntityDecode(value.trim())
+  }
+  return ''
+}
+
+function pageTitle(html) {
+  return metaContent(html, ['og:title', 'twitter:title']) ||
+    htmlEntityDecode(/<title\b[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1]?.replace(/<[^>]+>/g, '').trim() || '')
+}
+
+// Instagram's normal public response is often a JavaScript shell with no
+// Open-Graph tags. Its public embed page still includes a CDN image, so use
+// that as a narrowly-scoped fallback rather than turning every arbitrary page
+// image into a "preview" by guesswork.
+function instagramImage(html) {
+  const tags = html.match(/<img\b[^>]*>/gi) || []
+  for (const tag of tags) {
+    const src = /\bsrc\s*=\s*["']([^"']+)["']/i.exec(tag)?.[1]
+    if (src && /(?:scontent\.|fbcdn\.net)/i.test(src)) return htmlEntityDecode(src)
+  }
+  return ''
+}
+
+async function fetchHtml(url, signal, maxPageBytes) {
+  const res = await fetch(url, {
+    signal,
+    headers: { 'user-agent': UA, accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.1' },
+  })
+  if (!res.ok) return null
+  const type = res.headers.get('content-type') || ''
+  const declared = Number(res.headers.get('content-length'))
+  if (!/html|xhtml/i.test(type) || (Number.isFinite(declared) && declared > maxPageBytes)) return null
+  const html = Buffer.from(await res.arrayBuffer()).toString('utf8')
+  return html.length <= maxPageBytes ? { res, html } : null
+}
+
+async function pagePreview(rawUrl, { maxPageBytes = 2 * 1024 * 1024 } = {}) {
+  let source
+  try {
+    source = new URL(rawUrl)
+    if (!['http:', 'https:'].includes(source.protocol)) return null
+  } catch {
+    return null
+  }
+  const ctl = new AbortController()
+  const timer = setTimeout(() => ctl.abort(), 10000)
+  try {
+    let page = await fetchHtml(source, ctl.signal, maxPageBytes)
+    if (!page) return null
+    let image = metaContent(page.html, ['og:image:secure_url', 'og:image', 'twitter:image', 'twitter:image:src'])
+    const isInstagram = /(^|\.)instagram\.com$/i.test(source.hostname)
+    if (!image && isInstagram) {
+      const embed = new URL(source)
+      embed.search = ''
+      embed.hash = ''
+      embed.pathname = `${embed.pathname.replace(/\/+$/, '')}/embed/`
+      page = await fetchHtml(embed, ctl.signal, maxPageBytes) || page
+      image = metaContent(page.html, ['og:image:secure_url', 'og:image', 'twitter:image', 'twitter:image:src']) || instagramImage(page.html)
+    }
+    if (!image) return null
+    const imageUrl = new URL(image, page.res.url || source).toString()
+    const got = await downloadBestImage(imageUrl)
+    if (!got) return null
+    return { ...got, pageUrl: source.toString(), imageUrl, title: pageTitle(page.html) }
+  } catch {
+    return null
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 function extFromMime(mime = '') {
   const clean = mime.split(';')[0].trim().toLowerCase()
   if (clean === 'image/jpeg' || clean === 'image/jpg') return 'jpg'
@@ -177,4 +269,4 @@ function extFromMime(mime = '') {
   return 'png'
 }
 
-module.exports = { fullResCandidates, downloadBestImage, extFromMime, UA }
+module.exports = { fullResCandidates, downloadBestImage, pagePreview, extFromMime, UA }

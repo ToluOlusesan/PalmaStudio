@@ -1,6 +1,8 @@
 // Shared Focus zone-grid geometry. Used by the Focus canvas (FocusBoard) and the
 // export renderer so a zone's members lay out identically on screen and in PDFs.
-export const HEADER_H = 30
+// The zone title and its short takeaway share a fixed band. Keeping this in the
+// layout engine makes members land in the same place on screen and in exports.
+export const HEADER_H = 72
 export const PAD = 12
 export const GAP = 8
 export const CELL_MIN = 104

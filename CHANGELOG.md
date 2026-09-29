@@ -5,6 +5,57 @@ All notable changes to Palma are recorded here. Versions follow
 installer — electron-updater downloads only the changed blocks against the
 previously installed version (via the `.blockmap` published with each build).
 
+## [1.3.3] — 2026-09-29
+
+### Changed
+- **Notes stay easier to read when the canvas is zoomed out.** At low zoom, the
+  text keeps a small minimum screen size while the note remains the same canvas
+  size.
+- **The Library mounts only the rows near the viewport.** Large collections no
+  longer keep every reference card alive at once.
+- **Reset size is available from an item's context menu**, including for notes.
+
+## [1.3.2] — 2026-09-23 · beta
+
+### Changed
+- **Focus now reads the color vibe of the placed references.** It extracts a
+  small, distinct palette from all placed images automatically, giving each
+  reference equal influence. There is no grouping or anchor step.
+- **Video controls stay readable while zooming the canvas.** The transport is
+  kept compact on large cards and its controls retain usable screen size.
+
+### Fixed
+- **Captured video frames keep their source resolution on the canvas.** New
+  captures display the saved full-size PNG instead of a 640 px preview. Older
+  captures upgrade from that preview when their saved PNG is still available.
+
+## [1.3.1] — 2026-09-06 · beta
+
+### Added
+- **Double-click an image to open it full-size.** Images on both the Dump Board
+  and inside Focus zones now open in the same quiet, view-only preview used by
+  the Library. Click the backdrop, use the close button, or press `Escape` to
+  return to the canvas.
+- **Paste a reference link directly onto the canvas.** Palma creates the card
+  immediately, then fills it with the page thumbnail and title whenever the
+  source makes one available. The original link remains available from the
+  card.
+
+### Changed
+- **One media viewer across Palma.** The Library and both canvases now share a
+  single preview component, keeping its styling, close behaviour, and keyboard
+  handling consistent.
+- **Focus has one quiet colour readout.** The former multi-colour selection and
+  saved anchor controls are gone; Focus now shows the single average colour of
+  its placed image references.
+- **The interface is sans-serif throughout**, including the app and companion
+  site, for a calmer, more direct working surface.
+
+### Fixed
+- **Canvas controls remain usable at extreme zoom levels.** Resize handles keep
+  a practical hit target and Send to Focus no longer shrinks away on oversized
+  references.
+
 ## [1.3.0] — 2026-08-27 · beta
 
 ### Added

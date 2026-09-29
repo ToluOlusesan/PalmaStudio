@@ -1,10 +1,11 @@
 import { memo, useState, useEffect, useRef } from 'react'
-import { ImageBroken, ChatCircle, Minus, Lock, Target, Check } from '@phosphor-icons/react'
+import { ImageBroken, ChatCircle, Minus, Lock, Target, Check, LinkSimple } from '@phosphor-icons/react'
 import { useCanvasStore } from '../../store/canvasStore.js'
 import { useFocusStore } from '../../store/focusStore.js'
-import { snapToGrid } from '../../utils/canvasUtils.js'
+import { snapToGrid, loadImageSize } from '../../utils/canvasUtils.js'
 import { isGifItem } from '../../utils/pathUtils.js'
 import { hasCrop, resolveCrop, clampCrop, scaleCrop, cropStyle } from '../../utils/cropGeometry.js'
+import { openExternalUrl, toAssetUrl } from '../../utils/platform.js'
 import Badge from '../../components/Badge.jsx'
 import CanvasVideo from './CanvasVideo.jsx'
 import CanvasGif from './CanvasGif.jsx'
@@ -17,14 +18,14 @@ const MIN_H = 48
 // Handle placement. Each sits half in / half out of the card edge so it can be
 // grabbed from either side of the boundary.
 const CORNERS = [
-  { dir: 'nw', className: '-left-1 -top-1', cursor: 'nwse-resize' },
-  { dir: 'ne', className: '-right-1 -top-1', cursor: 'nesw-resize' },
-  { dir: 'sw', className: '-left-1 -bottom-1', cursor: 'nesw-resize' },
-  { dir: 'se', className: '-right-1 -bottom-1', cursor: 'nwse-resize' },
+  { dir: 'nw', left: '0%', top: '0%', cursor: 'nwse-resize' },
+  { dir: 'ne', left: '100%', top: '0%', cursor: 'nesw-resize' },
+  { dir: 'sw', left: '0%', top: '100%', cursor: 'nesw-resize' },
+  { dir: 'se', left: '100%', top: '100%', cursor: 'nwse-resize' },
 ]
 const SIDES = [
-  { dir: 'w', className: '-left-[3px] top-1/2 -translate-y-1/2' },
-  { dir: 'e', className: '-right-[3px] top-1/2 -translate-y-1/2' },
+  { dir: 'w', left: '0%', top: '50%' },
+  { dir: 'e', left: '100%', top: '50%' },
 ]
 
 // A single absolutely-positioned canvas item (image / video / note / comment).
@@ -39,7 +40,7 @@ const SIDES = [
 // around a picture that stays put), and Shift-drag is the old free resize for
 // when you really do want to squash something. Ctrl-dragging the picture itself
 // slides it inside its crop. See utils/cropGeometry.js for the model.
-function CanvasItem({ item, selected, panMode, animating, onContextMenu }) {
+function CanvasItem({ item, zoom = 1, selected, panMode, animating, onContextMenu, onOpenMedia }) {
   const updateItem = useCanvasStore((s) => s.updateItem)
   const bringToFront = useCanvasStore((s) => s.bringToFront)
   const select = useCanvasStore((s) => s.select)
@@ -56,6 +57,20 @@ function CanvasItem({ item, selected, panMode, animating, onContextMenu }) {
 
   const isMedia = item.type === 'image' || item.type === 'video'
   const isGif = isGifItem(item)
+
+  // Earlier video captures stored a full PNG on disk but pointed their cards
+  // at a 640px JPEG preview. Upgrade those existing cards to their saved PNG
+  // after confirming it still loads; the item then persists the sharper src.
+  useEffect(() => {
+    if (item.type !== 'image' || !item.src?.startsWith('data:image/jpeg;') ||
+        !/[\\/]assets[\\/]frames[\\/].+\.png$/i.test(item.path || '')) return
+    let cancelled = false
+    toAssetUrl(item.path).then(async (src) => {
+      if (!src || !(await loadImageSize(src)) || cancelled) return
+      updateItem(item.id, { src })
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [item.id, item.path, item.src, item.type, updateItem])
 
   // Intrinsic pixel size of whatever is painted in this card — read straight off
   // the live element, so nothing extra has to be stored on the item. Returns
@@ -466,6 +481,12 @@ function CanvasItem({ item, selected, panMode, animating, onContextMenu }) {
       }}
     >
       <div
+        onDoubleClick={(e) => {
+          if (item.type !== 'image' || item.missing) return
+          e.preventDefault()
+          e.stopPropagation()
+          onOpenMedia?.(item)
+        }}
         className={`card-in w-full h-full overflow-hidden relative bg-surface-2 ${
           selected || dragging ? '' : 'card-rest'
         } ${collapsed ? 'rounded-full' : 'rounded-[6px]'}`}
@@ -508,6 +529,7 @@ function CanvasItem({ item, selected, panMode, animating, onContextMenu }) {
         ) : (
           <NoteItem
             item={item}
+            zoom={zoom}
             editing={editing}
             setEditing={setEditing}
             updateItem={updateItem}
@@ -554,7 +576,7 @@ function CanvasItem({ item, selected, panMode, animating, onContextMenu }) {
             WebkitBackdropFilter: 'blur(6px)',
             border: '0.5px solid var(--border)',
             boxShadow: 'var(--shadow-soft)',
-            transform: 'translateX(-50%) scale(var(--inv-zoom, 1))',
+            transform: 'translateX(-50%) scale(var(--control-inv-zoom, 1))',
             // A GIF's frame transport owns the bottom of the card, so the pill
             // moves to the top rather than sitting on top of the scrubber.
             transformOrigin: isGif ? 'top center' : 'bottom center',
@@ -562,6 +584,24 @@ function CanvasItem({ item, selected, panMode, animating, onContextMenu }) {
         >
           {sent ? <Check size={13} weight="bold" /> : <Target size={13} />}
           {sent ? 'Sent to Focus' : 'Send to Focus'}
+        </button>
+      )}
+
+      {/* Link previews retain a quiet way back to the original post without
+          turning the board into a feed. It is visible on hover/selection only. */}
+      {item.sourceUrl && !item.missing && !collapsed && (
+        <button
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation()
+            openExternalUrl(item.sourceUrl)
+          }}
+          title="Open original link"
+          aria-label="Open original link"
+          className="absolute top-1.5 left-1.5 z-10 grid place-items-center w-6 h-6 rounded-full text-[#0a0a0a] opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity duration-150"
+          style={{ background: 'rgba(255,255,255,0.82)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)', border: '0.5px solid var(--border)', boxShadow: 'var(--shadow-soft)', transform: 'scale(var(--control-inv-zoom, 1))', transformOrigin: 'top left' }}
+        >
+          <LinkSimple size={13} weight="bold" />
         </button>
       )}
 
@@ -583,23 +623,27 @@ function CanvasItem({ item, selected, panMode, animating, onContextMenu }) {
           both edges are still reachable from the corners. */}
       {!panMode && !collapsed && !item.locked && (
         <>
-          {CORNERS.map(({ dir, className, cursor }) => (
+          {CORNERS.map(({ dir, left, top, cursor }) => (
             <div
               key={dir}
               onMouseDown={(e) => startResize(e, dir)}
               title={resizeHint}
-              className={`absolute w-3 h-3 rounded-[3px] opacity-0 group-hover:opacity-100 transition-opacity ${className}`}
-              style={{ background: 'var(--accent)', border: '1px solid var(--bg)', cursor }}
-            />
+              className={`absolute z-20 w-6 h-6 grid place-items-center transition-opacity ${selected ? 'opacity-100' : 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto'}`}
+              style={{ left, top, transform: 'scale(var(--control-inv-zoom, 1)) translate(-50%, -50%)', transformOrigin: 'top left', cursor }}
+            >
+              <span className="w-2.5 h-2.5 rounded-[3px]" style={{ background: 'var(--accent)', border: '1px solid var(--bg)', boxShadow: '0 1px 3px rgba(0,0,0,0.22)' }} />
+            </div>
           ))}
-          {SIDES.map(({ dir, className }) => (
+          {SIDES.map(({ dir, left, top }) => (
             <div
               key={dir}
               onMouseDown={(e) => startResize(e, dir)}
               title={resizeHint}
-              className={`absolute w-[5px] h-5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity ${className}`}
-              style={{ background: 'var(--accent)', border: '1px solid var(--bg)', cursor: 'ew-resize' }}
-            />
+              className={`absolute z-20 w-6 h-7 grid place-items-center transition-opacity ${selected ? 'opacity-100' : 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto'}`}
+              style={{ left, top, transform: 'scale(var(--control-inv-zoom, 1)) translate(-50%, -50%)', transformOrigin: 'top left', cursor: 'ew-resize' }}
+            >
+              <span className="w-1.5 h-4 rounded-full" style={{ background: 'var(--accent)', border: '1px solid var(--bg)', boxShadow: '0 1px 3px rgba(0,0,0,0.22)' }} />
+            </div>
           ))}
         </>
       )}
@@ -793,8 +837,11 @@ function CommentItem({ item, collapsed, editing, setEditing, updateItem }) {
   )
 }
 
-function NoteItem({ item, editing, setEditing, updateItem }) {
+function NoteItem({ item, zoom = 1, editing, setEditing, updateItem }) {
   const tint = item.color || NOTE_COLORS[0]
+  // Keep note text at a modest readable size on screen when the board is zoomed
+  // out. The card itself stays at its intended canvas size and position.
+  const noteFontSize = Math.max(13, 8 / Math.max(0.1, zoom))
   return (
     <div
       className="w-full h-full relative"
@@ -822,11 +869,13 @@ function NoteItem({ item, editing, setEditing, updateItem }) {
               setEditing(false)
             }}
             onMouseDown={(e) => e.stopPropagation()}
+            style={{ fontSize: noteFontSize }}
             className="w-full h-full resize-none overflow-y-auto bg-transparent text-[13px] leading-[1.6] text-[#0a0a0a]"
           />
         ) : (
           <div
             data-wheel-scroll
+            style={{ fontSize: noteFontSize }}
             className="w-full h-full overflow-y-auto text-[13px] leading-[1.6] text-[#0a0a0a] whitespace-pre-wrap"
           >
             {item.content || (

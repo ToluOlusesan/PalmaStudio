@@ -4,12 +4,11 @@ import { BrowserRouter, HashRouter } from 'react-router-dom'
 import App from './App.jsx'
 // Self-hosted fonts (bundled into dist) so the app renders identically offline —
 // no dependency on the Google Fonts CDN. Weights mirror what the design uses:
-// Inter 300/400/500, DM Serif Display 400 + italic, JetBrains Mono 400.
+// Inter 300/400/500 and JetBrains Mono 400 are self-hosted so the app renders
+// identically offline.
 import '@fontsource/inter/300.css'
 import '@fontsource/inter/400.css'
 import '@fontsource/inter/500.css'
-import '@fontsource/dm-serif-display/400.css'
-import '@fontsource/dm-serif-display/400-italic.css'
 import '@fontsource/jetbrains-mono/400.css'
 import './index.css'
 

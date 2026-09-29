@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { CaretRight } from '@phosphor-icons/react'
 
-// 52px topbar. Page title in 18px DM Serif, or a breadcrumb trail for project
+// 52px topbar. Page title in the app's single sans voice, or a breadcrumb trail for project
 // views. Right slot holds contextual actions (search, share, save status).
 export default function Topbar({ title, crumbs, right }) {
   const navigate = useNavigate()

@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { Plus, Minus, ArrowsIn, X, ImageBroken, Rows, Columns, GridFour, NotePencil, ChatCircle, Export } from '@phosphor-icons/react'
+import { Plus, Minus, ArrowsIn, X, ImageBroken, Rows, Columns, GridFour, NotePencil, ChatCircle, Export, BookmarkSimple, DotsThree } from '@phosphor-icons/react'
+import { createPortal } from 'react-dom'
 import { useFocusStore, ZONE_COLORS, zoneFill, zoneStroke } from '../../store/focusStore.js'
 import { useSettingsStore } from '../../store/settingsStore.js'
 import { zoneLayout, ZONE_LAYOUTS } from '../../utils/focusLayout.js'
+import MediaLightbox from '../../components/MediaLightbox.jsx'
+import PaletteControl from './PaletteControl.jsx'
 
 const LAYOUT_ICONS = { grid: GridFour, horizontal: Rows, vertical: Columns }
 
@@ -12,7 +15,7 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
 
 // The Focus canvas: tinted Zone containers that hold and arrange the references
 // dropped into them. Populated only by dropping items from the Queue.
-export default function FocusBoard({ onOpenExport }) {
+export default function FocusBoard({ onOpenExport, sidePanel, onToggleQueue }) {
   const panX = useFocusStore((s) => s.panX)
   const panY = useFocusStore((s) => s.panY)
   const zoom = useFocusStore((s) => s.zoom)
@@ -35,6 +38,7 @@ export default function FocusBoard({ onOpenExport }) {
   const [dragOverZone, setDragOverZone] = useState(null)
   const [liftZone, setLiftZone] = useState(null) // zone floated above others while a member drags out of it
   const [resizingZone, setResizingZone] = useState(null) // members track 1:1 (no transition) while its zone resizes
+  const [viewer, setViewer] = useState(null) // image opened from a zone
 
   const queueById = useCallback((id) => queue.find((q) => q.id === id), [queue])
 
@@ -188,41 +192,54 @@ export default function FocusBoard({ onOpenExport }) {
   }
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col">
+    <div className="focus-workspace flex-1 min-h-0 flex flex-col">
       {/* All surfaces are token-based, so they follow the app theme and the
           Focus dim automatically — no per-element theming here. */}
       <div
-        className="h-11 shrink-0 flex items-center justify-between px-3 border-b-[0.5px]"
+        className="relative z-30 h-11 shrink-0 flex items-center justify-between px-3 border-b-[0.5px]"
         style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}
       >
-        <div data-tut="focus-toolbar" className="flex items-center gap-1.5">
+        <div data-tut="focus-toolbar" className="flex items-center gap-1.5 shrink-0">
           <button
             onClick={addZone}
-            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[12px] border-[0.5px] border-transparent transition-colors text-ink-2 hover:bg-surface-3 hover:text-ink"
+            title="Add Zone"
+            aria-label="Add Zone"
+            className="focus-toolbar-action inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[12px] whitespace-nowrap border-[0.5px] border-transparent transition-colors text-ink-2 hover:bg-surface-3 hover:text-ink"
           >
-            <Plus size={15} weight="bold" /> Add Zone
+            <Plus size={15} weight="bold" /> <span className="focus-toolbar-label">Add Zone</span>
           </button>
           <button
             onClick={() => addNote(centreOfViewport())}
-            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[12px] border-[0.5px] border-transparent transition-colors text-ink-2 hover:bg-surface-3 hover:text-ink"
+            title="Add Note"
+            aria-label="Add Note"
+            className="focus-toolbar-action inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[12px] whitespace-nowrap border-[0.5px] border-transparent transition-colors text-ink-2 hover:bg-surface-3 hover:text-ink"
           >
-            <NotePencil size={15} weight="bold" /> Add Note
+            <NotePencil size={15} weight="bold" /> <span className="focus-toolbar-label">Add Note</span>
           </button>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 text-[11px] tabular-nums text-ink-3">
+        <div className="flex items-center gap-2 shrink-0">
+          <div className="focus-toolbar-stats flex items-center gap-1.5 text-[11px] tabular-nums text-ink-3 whitespace-nowrap">
             {zones.length} {zones.length === 1 ? 'zone' : 'zones'}
             <span className="opacity-40">·</span>
             {placed.length} placed
           </div>
-          <span className="w-px h-5 bg-[var(--border)]" />
+          <span className="focus-toolbar-separator w-px h-5 bg-[var(--border)]" />
+          <button
+            onClick={onToggleQueue}
+            aria-pressed={sidePanel === 'queue'}
+            className={`h-7 px-2.5 rounded-md text-[12px] whitespace-nowrap transition-colors ${sidePanel === 'queue' ? 'bg-surface-3 text-ink' : 'text-ink-2 hover:bg-surface-3 hover:text-ink'}`}
+          >
+            Queue{queue.length > placed.length ? ` · ${queue.length - placed.length}` : ''}
+          </button>
+          <PaletteControl />
+          <span className="focus-toolbar-separator w-px h-5 bg-[var(--border)]" />
           <button
             onClick={() => onOpenExport?.()}
             title="Export"
             aria-label="Export"
-            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[12px] border-[0.5px] border-transparent transition-colors text-ink-2 hover:bg-surface-3 hover:text-ink"
+            className="focus-toolbar-action inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[12px] whitespace-nowrap border-[0.5px] border-transparent transition-colors text-ink-2 hover:bg-surface-3 hover:text-ink"
           >
-            <Export size={15} style={{ color: '#6366F1' }} /> Export
+            <Export size={15} /> <span className="focus-toolbar-label">Export</span>
           </button>
         </div>
       </div>
@@ -261,7 +278,7 @@ export default function FocusBoard({ onOpenExport }) {
                 {members.map((m, i) => {
                   const entry = queueById(m.queueItemId)
                   if (!entry) return null
-                  return <Member key={m.id} placed={m} entry={entry} cell={lay.cellAt(i)} panMode={panMode} toWorld={toWorld} onDrop={onMemberDrop} onLift={setLiftZone} instant={resizingZone === z.id} />
+                  return <Member key={m.id} placed={m} entry={entry} cell={lay.cellAt(i)} panMode={panMode} toWorld={toWorld} onDrop={onMemberDrop} onLift={setLiftZone} instant={resizingZone === z.id} onOpenMedia={setViewer} isHero={z.heroQueueItemId === m.queueItemId} />
                 })}
               </Zone>
             )
@@ -304,6 +321,8 @@ export default function FocusBoard({ onOpenExport }) {
           <ZBtn icon={ArrowsIn} label="Reset view" onClick={resetView} />
         </div>
       </div>
+
+      {viewer && <MediaLightbox asset={viewer} onClose={() => setViewer(null)} />}
     </div>
   )
 }
@@ -316,23 +335,49 @@ function ZBtn({ icon: Icon, label, onClick, disabled }) {
   )
 }
 
-// A tinted zone container. Drag anywhere on the body to move it; rename/recolour/
-// delete from the header; resize from the corner. Members render inside it.
+// A quiet grouping surface: name + current layout stay visible; occasional
+// actions live in one labeled menu rather than five tiny header targets.
 function Zone({ zone, dragOver, lifted, panMode, count, onResizeState, onAddNote, onAddComment, children }) {
   const updateZone = useFocusStore((s) => s.updateZone)
   const commitZones = useFocusStore((s) => s.commitZones)
   const deleteZone = useFocusStore((s) => s.deleteZone)
   const dark = useSettingsStore((s) => s.darkMode)
   const [editing, setEditing] = useState(false)
-  const [picking, setPicking] = useState(false)
+  const [editingTakeaway, setEditingTakeaway] = useState(false)
+  const [menuPos, setMenuPos] = useState(null)
+  const menuRef = useRef(null)
+  const menuButtonRef = useRef(null)
 
-  // On the pitch-black dark canvas the zones read as "lit": richer tints and a
-  // soft coloured glow. In light mode they sit flat on paper. Chrome uses ink
-  // tokens so it stays legible either way.
-  const fillA = dark ? (dragOver ? 0.28 : 0.2) : dragOver ? 0.16 : 0.1
-  const strokeA = dark ? (dragOver ? 0.95 : 0.62) : dragOver ? 0.7 : 0.3
-  const nameText = 'text-ink-2 hover:text-ink'
-  const chromeText = 'text-ink-3 hover:text-ink'
+  useEffect(() => {
+    if (!menuPos) return
+    menuRef.current?.querySelector('button')?.focus()
+    const closeOutside = (e) => {
+      if (!menuRef.current?.contains(e.target) && !menuButtonRef.current?.contains(e.target)) setMenuPos(null)
+    }
+    const closeEscape = (e) => {
+      if (e.key === 'Escape') {
+        setMenuPos(null)
+        menuButtonRef.current?.focus()
+      }
+    }
+    const closeOnMove = () => setMenuPos(null)
+    window.addEventListener('pointerdown', closeOutside)
+    window.addEventListener('keydown', closeEscape)
+    window.addEventListener('resize', closeOnMove)
+    window.addEventListener('scroll', closeOnMove, true)
+    return () => {
+      window.removeEventListener('pointerdown', closeOutside)
+      window.removeEventListener('keydown', closeEscape)
+      window.removeEventListener('resize', closeOnMove)
+      window.removeEventListener('scroll', closeOnMove, true)
+    }
+  }, [menuPos])
+
+  // Flat, quiet grouping on both themes. Drop targets gain contrast without a halo.
+  const fillA = dark ? (dragOver ? 0.2 : 0.12) : dragOver ? 0.13 : 0.07
+  const strokeA = dark ? (dragOver ? 0.75 : 0.4) : dragOver ? 0.6 : 0.25
+  const nameText = 'text-ink hover:text-ink'
+  const chromeText = 'text-ink-2 hover:text-ink'
   const hintText = 'text-ink-3'
 
   const startMove = (e) => {
@@ -382,25 +427,39 @@ function Zone({ zone, dragOver, lifted, panMode, count, onResizeState, onAddNote
     updateZone(zone.id, { layout: next })
     commitZones()
   }
+  const chooseLayout = (layout) => {
+    updateZone(zone.id, { layout })
+    commitZones()
+    setMenuPos(null)
+  }
+  const openMenu = (e) => {
+    if (menuPos) return setMenuPos(null)
+    const rect = e.currentTarget.getBoundingClientRect()
+    const left = Math.max(8, Math.min(rect.right - 196, window.innerWidth - 204))
+    const menuHeight = 264
+    const top = rect.bottom + menuHeight + 6 > window.innerHeight
+      ? Math.max(8, rect.top - menuHeight - 6)
+      : rect.bottom + 6
+    setMenuPos({ left, top })
+  }
 
   return (
     <div
       onMouseDown={startMove}
-      className="group/zone absolute rounded-[12px]"
+      className="group/zone absolute rounded-[8px]"
       style={{
         left: zone.x,
         top: zone.y,
         width: zone.width,
         height: zone.height,
-        background: zoneFill(zone.color, fillA, dark),
-        border: `1.5px solid ${zoneStroke(zone.color, strokeA, dark)}`,
-        boxShadow: dark ? `0 0 26px -2px ${zoneStroke(zone.color, 0.4, true)}` : 'none',
-        transition: 'border-color 150ms ease-out, background 150ms ease-out, box-shadow 300ms ease-out',
+        background: zoneFill(zone.color, fillA),
+        border: `1px solid ${zoneStroke(zone.color, strokeA)}`,
+        transition: 'border-color 150ms ease-out, background 150ms ease-out',
         cursor: panMode ? 'inherit' : 'grab',
         zIndex: lifted ? 500 : 0,
       }}
     >
-      <div className="absolute top-0 left-0 right-0 h-7 flex items-center justify-between px-2 rounded-t-[12px]">
+      <div className="absolute top-0 left-0 right-0 h-7 flex items-center justify-between px-2 rounded-t-[8px]">
         {editing ? (
           <input
             autoFocus
@@ -428,69 +487,120 @@ function Zone({ zone, dragOver, lifted, panMode, count, onResizeState, onAddNote
           </button>
         )}
 
-        <div className="relative flex items-center gap-1.5">
+        <div className="relative flex items-center gap-0.5">
           <button
             onMouseDown={(e) => e.stopPropagation()}
             onClick={cycleLayout}
             title={`Layout: ${mode} — click to change`}
-            className={`grid place-items-center w-4 h-4 rounded transition-colors ${chromeText}`}
+            aria-label={`Layout: ${mode}. Change layout`}
+            className={`grid place-items-center w-6 h-6 rounded transition-colors hover:bg-[var(--sand-hover)] ${chromeText}`}
           >
-            <LayoutIcon size={13} />
+            <LayoutIcon size={14} />
           </button>
           <button
+            ref={menuButtonRef}
             onMouseDown={(e) => e.stopPropagation()}
-            onClick={onAddNote}
-            title="Pin a note to this zone"
-            className={`grid place-items-center w-4 h-4 rounded transition-colors ${chromeText}`}
+            onClick={openMenu}
+            title="Zone options"
+            aria-label={`Options for ${zone.name}`}
+            aria-expanded={!!menuPos}
+            aria-haspopup="menu"
+            className={`grid place-items-center w-6 h-6 rounded transition-colors hover:bg-[var(--sand-hover)] ${chromeText}`}
           >
-            <NotePencil size={13} />
+            <DotsThree size={17} weight="bold" />
           </button>
-          <button
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={onAddComment}
-            title="Pin a comment to this zone"
-            className={`grid place-items-center w-4 h-4 rounded transition-colors ${chromeText}`}
-          >
-            <ChatCircle size={13} />
-          </button>
-          <button
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={() => setPicking((v) => !v)}
-            title="Zone colour"
-            className="w-3.5 h-3.5 rounded-full border-[0.5px] border-[var(--border-2)]"
-            style={{ background: zoneStroke(zone.color, 0.9) }}
-          />
-          <button
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={remove}
-            title="Delete zone"
-            className={`grid place-items-center w-4 h-4 rounded opacity-0 group-hover/zone:opacity-100 transition-opacity ${chromeText}`}
-          >
-            <X size={11} weight="bold" />
-          </button>
-
-          {picking && (
-            <div
-              className="pop-in absolute top-5 right-0 z-[60] flex flex-wrap gap-1.5 p-2 rounded-md bg-[var(--surface-modal)] border-[0.5px] w-[120px]"
-              style={{ borderColor: 'var(--border-2)', boxShadow: 'var(--shadow-lifted)' }}
-              onMouseDown={(e) => e.stopPropagation()}
-            >
-              {ZONE_COLORS.map((c) => (
-                <button
-                  key={c.name}
-                  onClick={() => {
-                    updateZone(zone.id, { color: c.name })
-                    commitZones()
-                    setPicking(false)
-                  }}
-                  title={c.name}
-                  className="w-5 h-5 rounded-full border-[0.5px] border-[var(--border-2)] transition-transform hover:scale-110"
-                  style={{ background: zoneStroke(c.name, 0.9), outline: c.name === zone.color ? '2px solid var(--ink)' : 'none', outlineOffset: '1px' }}
-                />
-              ))}
-            </div>
-          )}
         </div>
+      </div>
+
+      {menuPos && createPortal(
+        <div
+          ref={menuRef}
+          role="menu"
+          aria-label={`${zone.name} options`}
+          onMouseDown={(e) => e.stopPropagation()}
+          className="pop-in fixed z-[1000] w-[196px] p-1.5 rounded-md border-[0.5px] text-ink"
+          style={{ left: menuPos.left, top: menuPos.top, background: 'var(--surface-modal)', borderColor: 'var(--border-2)', boxShadow: 'var(--shadow-lifted)' }}
+        >
+          <div className="px-2 pt-1 pb-1 text-[10px] uppercase tracking-[0.08em] text-ink-3">Layout</div>
+          <div className="flex gap-1 px-1 pb-1.5">
+            {ZONE_LAYOUTS.map((layout) => {
+              const Icon = LAYOUT_ICONS[layout]
+              return (
+                <button
+                  key={layout}
+                  role="menuitemradio"
+                  aria-checked={mode === layout}
+                  onClick={() => chooseLayout(layout)}
+                  title={layout}
+                  className={`flex-1 h-7 grid place-items-center rounded ${mode === layout ? 'bg-surface-3 text-ink' : 'text-ink-2 hover:bg-[var(--sand-hover)]'}`}
+                >
+                  <Icon size={15} />
+                </button>
+              )
+            })}
+          </div>
+          <div className="h-px bg-[var(--border)] my-1" />
+          <button role="menuitem" onClick={() => { onAddNote(); setMenuPos(null) }} className="w-full h-7 flex items-center gap-2 px-2 rounded text-[12px] text-ink-2 hover:text-ink hover:bg-[var(--sand-hover)]">
+            <NotePencil size={15} /> Pin note
+          </button>
+          <button role="menuitem" onClick={() => { onAddComment(); setMenuPos(null) }} className="w-full h-7 flex items-center gap-2 px-2 rounded text-[12px] text-ink-2 hover:text-ink hover:bg-[var(--sand-hover)]">
+            <ChatCircle size={15} /> Pin comment
+          </button>
+          <div className="h-px bg-[var(--border)] my-1" />
+          <div className="px-2 pt-0.5 pb-1.5 text-[10px] uppercase tracking-[0.08em] text-ink-3">Colour</div>
+          <div className="flex flex-wrap gap-1.5 px-2 pb-1.5">
+            {ZONE_COLORS.map((c) => (
+              <button
+                key={c.name}
+                onClick={() => { updateZone(zone.id, { color: c.name }); commitZones(); setMenuPos(null) }}
+                title={c.name}
+                aria-label={`${c.name} zone colour`}
+                aria-pressed={c.name === zone.color}
+                className="w-5 h-5 rounded-full border-[0.5px] border-[var(--border-2)] hover:scale-110 transition-transform"
+                style={{ background: zoneStroke(c.name, 0.9), outline: c.name === zone.color ? '2px solid var(--ink)' : 'none', outlineOffset: '1px' }}
+              />
+            ))}
+          </div>
+          <div className="h-px bg-[var(--border)] my-1" />
+          <button role="menuitem" onClick={() => { setMenuPos(null); remove() }} className="w-full h-7 flex items-center gap-2 px-2 rounded text-[12px] text-ink-2 hover:text-ink hover:bg-[var(--sand-hover)]">
+            <X size={14} /> Delete zone
+          </button>
+        </div>,
+        document.body
+      )}
+
+      <div className="absolute top-[30px] left-3 right-3 h-[38px] border-t-[0.5px] border-[var(--border)]">
+        {editingTakeaway ? (
+          <textarea
+            autoFocus
+            defaultValue={zone.takeaway || ''}
+            maxLength={180}
+            rows={2}
+            placeholder="What does this zone establish?"
+            onMouseDown={(e) => e.stopPropagation()}
+            onBlur={(e) => {
+              updateZone(zone.id, { takeaway: e.target.value.trim() })
+              commitZones()
+              setEditingTakeaway(false)
+            }}
+            onKeyDown={(e) => {
+              e.stopPropagation()
+              if (e.key === 'Enter' && !e.shiftKey) e.currentTarget.blur()
+              if (e.key === 'Escape') setEditingTakeaway(false)
+            }}
+            className="w-full h-full resize-none bg-transparent text-[11px] leading-[1.4] text-ink pt-1 outline-none placeholder:text-ink-3"
+          />
+        ) : (
+          <button
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={() => setEditingTakeaway(true)}
+            title="Edit zone takeaway"
+            className={`w-full h-full text-left text-[11px] leading-[1.4] pt-1 overflow-hidden ${zone.takeaway ? 'text-ink-2' : 'text-ink-3 opacity-70 hover:opacity-100'}`}
+            style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}
+          >
+            {zone.takeaway || 'Add a takeaway…'}
+          </button>
+        )}
       </div>
 
       {/* Empty hint inside the zone */}
@@ -515,8 +625,9 @@ function Zone({ zone, dragOver, lifted, panMode, count, onResizeState, onAddNote
 
 // A reference inside a zone, positioned by the zone's grid. Grab to rearrange
 // within the zone or drag onto another zone; the layout reflows smoothly.
-function Member({ placed, entry, cell, panMode, toWorld, onDrop, onLift, instant }) {
+function Member({ placed, entry, cell, panMode, toWorld, onDrop, onLift, instant, onOpenMedia, isHero }) {
   const unplaceItem = useFocusStore((s) => s.unplaceItem)
+  const setHero = useFocusStore((s) => s.setHero)
   const [drag, setDrag] = useState(null) // {dx, dy} world-space offset while dragging
 
   const start = (e) => {
@@ -562,6 +673,12 @@ function Member({ placed, entry, cell, panMode, toWorld, onDrop, onLift, instant
       }}
     >
       <div
+        onDoubleClick={(e) => {
+          if (entry.type !== 'image' || !entry.src) return
+          e.preventDefault()
+          e.stopPropagation()
+          onOpenMedia?.(entry)
+        }}
         className="w-full h-full rounded-[6px] overflow-hidden relative bg-surface-2"
         style={{ border: '0.5px solid var(--border-2)', boxShadow: drag ? 'var(--shadow-lifted)' : 'var(--shadow-soft)' }}
       >
@@ -580,6 +697,23 @@ function Member({ placed, entry, cell, panMode, toWorld, onDrop, onLift, instant
           <div className="w-full h-full p-2 text-[11px] leading-[1.45] text-ink overflow-hidden">{entry.content || entry.label}</div>
         )}
       </div>
+
+      {(entry.type === 'image' || entry.type === 'video') && (
+        <button
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation()
+            setHero(placed.zoneId, placed.queueItemId)
+          }}
+          title={isHero ? 'Remove key reference' : 'Set as key reference'}
+          aria-label={isHero ? 'Remove key reference' : 'Set as key reference'}
+          aria-pressed={isHero}
+          className={`absolute bottom-1.5 right-1.5 z-20 grid place-items-center w-6 h-6 rounded-md border-[0.5px] transition-opacity ${isHero ? 'opacity-100 text-ink' : 'opacity-0 group-hover/m:opacity-100 text-ink-2 hover:text-ink'}`}
+          style={{ background: 'var(--surface-modal)', borderColor: 'var(--border-2)', boxShadow: 'var(--shadow-soft)' }}
+        >
+          <BookmarkSimple size={14} weight={isHero ? 'fill' : 'regular'} />
+        </button>
+      )}
 
       <button
         onMouseDown={(e) => e.stopPropagation()}

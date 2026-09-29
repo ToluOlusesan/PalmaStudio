@@ -45,7 +45,7 @@ export default function ProjectCard({ project, onDelete }) {
       className="group relative rounded-[8px] overflow-hidden bg-surface-2 cursor-pointer"
       style={{ border: '0.5px solid var(--border)' }}
       variants={cardVariants}
-      whileHover={{ y: -2, borderColor: 'rgba(10,10,10,0.2)' }}
+      whileHover={{ y: -2, borderColor: 'var(--border-strong)' }}
       transition={{ duration: 0.15, ease: 'easeOut' }}
       onClick={() => {
         if (ctx || renaming) return
@@ -67,7 +67,8 @@ export default function ProjectCard({ project, onDelete }) {
           e.stopPropagation()
           setMenu((v) => !v)
         }}
-        className="absolute top-2 right-2 w-6 h-6 grid place-items-center rounded-md bg-[rgba(10,10,10,0.7)] text-white/80 opacity-0 group-hover:opacity-100 hover:text-white transition-opacity backdrop-blur-sm"
+        aria-label={`Options for ${project.name || 'Untitled'}`}
+        className="absolute top-2 right-2 w-7 h-7 grid place-items-center rounded-md bg-[rgba(10,10,10,0.72)] text-white/80 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-white transition-opacity backdrop-blur-sm"
       >
         <DotsThree size={16} weight="bold" />
       </button>
