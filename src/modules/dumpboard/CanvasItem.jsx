@@ -281,6 +281,64 @@ function CanvasItem({ item, zoom = 1, selected, panMode, animating, onContextMen
   const startResize = (e, dir) => {
     e.stopPropagation()
     e.preventDefault()
+    const store = useCanvasStore.getState()
+    const batch = store.selectedIds.length > 1 && store.selectedIds.includes(item.id)
+      ? store.items.filter((it) => store.selectedIds.includes(it.id) && !it.locked)
+      : []
+    if (batch.length > 1) {
+      const left = Math.min(...batch.map((it) => it.x))
+      const top = Math.min(...batch.map((it) => it.y))
+      const right = Math.max(...batch.map((it) => it.x + it.width))
+      const bottom = Math.max(...batch.map((it) => it.y + it.height))
+      const centerX = (left + right) / 2
+      const centerY = (top + bottom) / 2
+      const groupWidth = right - left
+      const groupHeight = bottom - top
+      const minScale = Math.max(...batch.map((it) => Math.max(MIN_W / it.width, MIN_H / it.height)))
+      const { zoom } = store
+      const startX = e.clientX
+      const startY = e.clientY
+      const west = dir.includes('w')
+      const east = dir.includes('e')
+      const north = dir.includes('n')
+      const south = dir.includes('s')
+      const anchorX = west ? right : east ? left : centerX
+      const anchorY = north ? bottom : south ? top : centerY
+      setSizing('scale')
+      let pushed = false
+      const move = (ev) => {
+        if (!pushed) {
+          pushed = true
+          useCanvasStore.getState().pushHistory()
+        }
+        const rawX = (ev.clientX - startX) / zoom
+        const rawY = (ev.clientY - startY) / zoom
+        const dx = east ? rawX : west ? -rawX : 0
+        const dy = south ? rawY : north ? -rawY : 0
+        const scaleDelta = west || east
+          ? north || south
+            ? (dx * groupWidth + dy * groupHeight) / (groupWidth ** 2 + groupHeight ** 2)
+            : dx / groupWidth
+          : dy / groupHeight
+        const k = Math.max(minScale, 1 + scaleDelta)
+        useCanvasStore.getState().updateItems(batch.map((it) => ({
+          id: it.id,
+          x: Math.round(anchorX + (it.x - anchorX) * k),
+          y: Math.round(anchorY + (it.y - anchorY) * k),
+          width: Math.max(MIN_W, Math.round(it.width * k)),
+          height: Math.max(MIN_H, Math.round(it.height * k)),
+          ...(hasCrop(it) ? { crop: scaleCrop(it.crop, k) } : {}),
+        })))
+      }
+      const up = () => {
+        setSizing(null)
+        window.removeEventListener('mousemove', move)
+        window.removeEventListener('mouseup', up)
+      }
+      window.addEventListener('mousemove', move)
+      window.addEventListener('mouseup', up)
+      return
+    }
     bringToFront(item.id)
     const { zoom } = useCanvasStore.getState()
     const nat = isMedia ? naturalSize() : null
@@ -445,7 +503,10 @@ function CanvasItem({ item, zoom = 1, selected, panMode, animating, onContextMen
     : 'w-full h-full object-cover pointer-events-none select-none'
   const mediaStyle = hasCrop(item) ? cropStyle(item.crop) : undefined
 
-  const resizeHint = isMedia
+  const batchSelected = selected && useCanvasStore.getState().selectedIds.length > 1
+  const resizeHint = batchSelected
+    ? 'Drag to scale selected items together'
+    : isMedia
     ? 'Drag to scale · Ctrl-drag to crop · Shift-drag to stretch'
     : 'Drag to resize'
 

@@ -587,15 +587,16 @@ export default function DumpBoard({
   // Reset size: put a picture back at its natural proportions (and drop any
   // crop), rather than the fixed rectangle the old menu entry forced — which on
   // a portrait image just cropped it differently.
-  const resetSize = (item) => {
-    updateItem(item.id, { crop: null })
-    if ((item.type === 'image' || item.type === 'video') && item.src) {
-      loadImageSize(item.src).then((d) => {
-        updateItem(item.id, d ? fitImageBox(d.w, d.h) : DEFAULT_SIZE[item.type])
-      })
-      return
-    }
-    updateItem(item.id, DEFAULT_SIZE[item.type] || DEFAULT_SIZE.image)
+  const resetSize = (itemsToReset) => {
+    if (!itemsToReset?.length) return
+    useCanvasStore.getState().pushHistory()
+    Promise.all(itemsToReset.map(async (it) => {
+      const fallback = DEFAULT_SIZE[it.type] || DEFAULT_SIZE.image
+      const size = (it.type === 'image' || it.type === 'video') && it.src
+        ? await loadImageSize(it.src).catch(() => null).then((d) => d ? fitImageBox(d.w, d.h) : fallback)
+        : fallback
+      return { id: it.id, crop: null, ...size }
+    })).then((patches) => useCanvasStore.getState().updateItems(patches))
   }
   const duplicate = (item) => {
     const { id, zIndex, groupId, groupColor, ...rest } = item
@@ -774,7 +775,7 @@ export default function DumpBoard({
           { label: 'Copy', icon: Copy, hint: 'Ctrl C', onClick: () => copyItems(menuTargetItems()) },
           { label: 'Paste', icon: Clipboard, hint: 'Ctrl V', onClick: () => pasteFromMenu() },
           { label: 'Duplicate', icon: Copy, hint: 'Ctrl D', onClick: () => duplicate(menu.item) },
-          { label: 'Reset size', icon: ArrowCounterClockwise, onClick: () => resetSize(menu.item) },
+          { label: 'Reset size', icon: ArrowCounterClockwise, onClick: () => resetSize(menuTargetItems()) },
           ...(hasCrop(menu.item)
             ? [{ label: 'Reset crop', icon: Crop, onClick: () => updateItem(menu.item.id, { crop: null }) }]
             : []),

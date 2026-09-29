@@ -214,6 +214,16 @@ export const useCanvasStore = create((set, get) => ({
       items: s.items.map((it) => (it.id === id ? { ...it, ...patch } : it)),
     })),
 
+  // Apply a set of item patches in one store update. Batch canvas actions use
+  // this during a drag so every selected item stays in sync on the same frame.
+  updateItems: (patches = []) => {
+    if (!patches.length) return
+    const byId = new Map(patches.map(({ id, ...patch }) => [id, patch]))
+    set((s) => ({
+      items: s.items.map((it) => (byId.has(it.id) ? { ...it, ...byId.get(it.id) } : it)),
+    }))
+  },
+
   deleteItem: (id) => {
     get().pushHistory()
     set((s) => ({

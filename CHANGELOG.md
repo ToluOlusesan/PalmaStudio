@@ -5,6 +5,14 @@ All notable changes to Palma are recorded here. Versions follow
 installer — electron-updater downloads only the changed blocks against the
 previously installed version (via the `.blockmap` published with each build).
 
+## [1.3.4] — 2026-09-29
+
+### Changed
+- **Reset size applies to the full selection.** Choose it once from the context
+  menu to restore every selected image, video or note in one undoable action.
+- **Resize handles scale selected items together.** Their relative layout and
+  individual proportions stay intact through the drag.
+
 ## [1.3.3] — 2026-09-29
 
 ### Changed
