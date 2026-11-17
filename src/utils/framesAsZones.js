@@ -9,7 +9,7 @@ const PAD = 24
 export function framesAsZones(items = []) {
   const groups = new Map()
   for (const it of items) {
-    if (!it.groupId) continue
+    if (!it.groupId || it.placeholder) continue
     if (!groups.has(it.groupId)) groups.set(it.groupId, [])
     groups.get(it.groupId).push(it)
   }

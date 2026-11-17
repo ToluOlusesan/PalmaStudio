@@ -200,7 +200,9 @@ export default function DumpBoard({
     if (e.button !== 0) return
     e.stopPropagation()
     const st = useCanvasStore.getState()
-    const ids = st.items.filter((it) => it.groupId === groupId && !it.locked).map((it) => it.id)
+    const own = st.items.filter((it) => it.groupId === groupId && !it.locked).map((it) => it.id)
+    // Comments pinned to members ride along, as they do on an item drag.
+    const ids = [...own, ...st.items.filter((it) => it.type === 'comment' && it.anchorId && own.includes(it.anchorId) && !own.includes(it.id)).map((it) => it.id)]
     st.setSelection(st.items.filter((it) => it.groupId === groupId).map((it) => it.id))
     let lastX = e.clientX
     let lastY = e.clientY
@@ -324,7 +326,11 @@ export default function DumpBoard({
     const used = new Set(st.items.map((it) => it.groupColor))
     const color = GROUP_COLORS.find((c) => !used.has(c)) || GROUP_COLORS[(GROUP_COLORS.indexOf(members[0].groupColor) + 1) % GROUP_COLORS.length]
     const dx = maxX - minX + 96
-    st.addItems(members.map(({ id, zIndex, ...rest }) => ({ ...rest, x: rest.x + dx, groupId: gid, groupName: `${base} ${letter}`, groupColor: color }))) // eslint-disable-line no-unused-vars
+    const newIds = st.addItems(members.map(({ id, zIndex, ...rest }) => ({ ...rest, x: rest.x + dx, groupId: gid, groupName: `${base} ${letter}`, groupColor: color }))) // eslint-disable-line no-unused-vars
+    // Re-point copied comments at the copied images (or let them float).
+    const map = new Map(members.map((m, i) => [m.id, newIds[i]]))
+    const fix = members.map((m, i) => (m.anchorId ? { id: newIds[i], anchorId: map.get(m.anchorId) || null } : null)).filter(Boolean)
+    if (fix.length) useCanvasStore.getState().updateItems(fix)
     glide(() => useCanvasStore.getState().clearFrameOverlap(gid))
   }, [glide])
 
@@ -578,7 +584,7 @@ export default function DumpBoard({
       if (mod && key === 'g') {
         e.preventDefault()
         if (e.shiftKey) ungroup(sel)
-        else if (sel.length > 1) group(sel)
+        else if (sel.length) group(sel)
         return
       }
       // Lock / unlock the selection.

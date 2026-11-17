@@ -27,7 +27,10 @@ export default function CanvasVideo({ item, mediaClassName, mediaStyle }) {
   const [codec, setCodec] = useState('ok')
   const updateItem = useCanvasStore((s) => s.updateItem)
   const onMediaError = async () => {
-    if (codec !== 'ok' || !item.path || item.remuxed) return setCodec('failed')
+    // Remuxing only rewraps streams (-c:v copy); it can't fix an undecodable
+    // video codec, so only try it for containers Chromium can't open.
+    const remuxable = /\.(ts|m2ts|mts|mkv)$/i.test(item.path || '')
+    if (codec !== 'ok' || !remuxable || item.remuxed) return setCodec('failed')
     setCodec('converting')
     const out = await remuxVideo(item.path)
     const src = out ? await toAssetUrl(out).catch(() => null) : null

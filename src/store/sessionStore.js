@@ -39,11 +39,16 @@ function hydrateBoard(session, moduleKey) {
   if (migrated) ({ items, maxZ } = migrated)
   useCanvasStore.getState().hydrate({ ...board, items, maxZ })
   if (migrated) {
-    // Persist both halves after the current set() settles.
+    // Flag the in-memory focus slice only — no scheduleSave. Marking the
+    // session dirty here would make the async disk reconcile bail and let a
+    // stale cache overwrite a newer palma.json. Until the first real edit
+    // saves, each load re-derives the same frames from the untouched slices.
     queueMicrotask(() => {
-      const st = useSessionStore.getState()
-      st.saveModule('focus', { ...focus, migrated: true })
-      st.saveModule('dumpboard', useCanvasStore.getState().snapshot())
+      useSessionStore.setState((st) =>
+        st.session?.id === session.id
+          ? { session: { ...st.session, modules: { ...st.session.modules, focus: { ...focus, migrated: true } } } }
+          : {}
+      )
     })
   }
 }

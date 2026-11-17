@@ -452,11 +452,15 @@ export const useCanvasStore = create((set, get) => ({
       for (const [k, arr] of units) {
         if (moved.has(k) || arr.some((m) => m.locked)) continue
         const b = boxOf(arr)
-        if (!hit(src, b) || b.x0 < src.x0) continue
-        const dx = src.x1 + GAP - b.x0
+        if (!hit(src, b)) continue
+        // Units starting right of the frame's left edge go right; ones that
+        // start further left (sitting below/above it) go down instead.
+        const right = b.x0 >= src.x0
+        const dx = right ? src.x1 + GAP - b.x0 : 0
+        const dy = right ? 0 : src.y1 + GAP - b.y0
         const ids = new Set(arr.map((m) => m.id))
         for (const c of items) if (c.type === 'comment' && ids.has(c.anchorId)) ids.add(c.id)
-        get().moveBy([...ids], dx, 0)
+        get().moveBy([...ids], dx, dy)
         moved.add(k)
         queue.push(k)
       }
@@ -581,7 +585,7 @@ export const useCanvasStore = create((set, get) => ({
   // Drop hit-test: the id of the group whose padded box contains (x,y),
   // excluding `exclude` (the dragged item's own group). null if none.
   groupAt: (x, y, exclude) => {
-    const PAD = 8
+    const PAD = 20 // = the frame's drawn padding, so the whole tint is a target
     for (const [gid, b] of groupBoxes(get().items, exclude)) {
       if (x >= b.minX - PAD && x <= b.maxX + PAD && y >= b.minY - PAD && y <= b.maxY + PAD) {
         return gid

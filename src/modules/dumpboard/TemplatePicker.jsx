@@ -8,7 +8,9 @@ export default function TemplatePicker({ onPick, onClose }) {
   const ref = useRef(null)
   useEffect(() => {
     const down = (e) => {
-      if (!ref.current?.contains(e.target)) onClose()
+      // The dock's Templates button toggles us itself; closing here too would
+      // make its click reopen the picker.
+      if (!ref.current?.contains(e.target) && !e.target.closest?.('[aria-label="Templates"]')) onClose()
     }
     const key = (e) => e.key === 'Escape' && onClose()
     document.addEventListener('pointerdown', down, true)

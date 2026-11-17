@@ -353,19 +353,28 @@ ipcMain.handle('remux-video', (_e, srcPath) => {
   const out = srcPath.replace(/\.[^.\/]+$/, '') + '.palma.mp4'
   if (fs.existsSync(out)) return out
   if (remuxJobs.has(out)) return remuxJobs.get(out)
+  const part = out + '.part'
   const job = new Promise((resolve) => {
     const { spawn } = require('child_process')
     let proc
     try {
       proc = spawn(ffmpegBinary(), ['-y', '-v', 'error', '-i', srcPath, '-map', '0:v:0', '-map', '0:a:0?',
-        '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', out], { windowsHide: true })
+        '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', '-f', 'mp4', part], { windowsHide: true })
     } catch {
       return resolve(null)
     }
     proc.on('error', () => resolve(null))
-    proc.on('close', (code) => {
-      if (code === 0 && fs.existsSync(out)) return resolve(out)
-      fsp.rm(out, { force: true }).catch(() => {})
+    proc.on('close', async (code) => {
+      // Only a clean exit is promoted to the final name, so an interrupted run
+      // (quit/crash mid-convert) never leaves a truncated file that the
+      // existsSync fast-path above would later trust.
+      if (code === 0) {
+        try {
+          await fsp.rename(part, out)
+          return resolve(out)
+        } catch { /* fall through */ }
+      }
+      fsp.rm(part, { force: true }).catch(() => {})
       resolve(null)
     })
   }).finally(() => remuxJobs.delete(out))

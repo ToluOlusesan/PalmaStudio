@@ -108,7 +108,8 @@ export default function Connectors({ edges, itemById, panX, panY, zoom, selected
       onEnd: (uv) => {
         setReconnect(null)
         const hit = hitItem(toCanvas(uv), other)
-        if (hit && hit.id !== e[end]) updateEdge(e.id, { [end]: hit.id, fromSide: undefined, toSide: undefined })
+        const dup = hit && useCanvasStore.getState().edges.some((x) => x.id !== e.id && ((x.from === other && x.to === hit.id) || (x.to === other && x.from === hit.id)))
+        if (hit && hit.id !== e[end] && !dup) updateEdge(e.id, { [end]: hit.id, fromSide: undefined, toSide: undefined })
       },
       onClick: () => setReconnect(null),
     })
