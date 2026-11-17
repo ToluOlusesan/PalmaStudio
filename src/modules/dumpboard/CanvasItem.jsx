@@ -1,5 +1,6 @@
 import { memo, useState, useEffect, useRef } from 'react'
 import { ImageBroken, ChatCircle, Minus, Lock, LinkSimple } from '@phosphor-icons/react'
+import { snapToGuides } from '../../utils/smartGuides.js'
 import { useCanvasStore } from '../../store/canvasStore.js'
 import { snapToGrid, loadImageSize } from '../../utils/canvasUtils.js'
 import { isGifItem } from '../../utils/pathUtils.js'
@@ -46,7 +47,11 @@ function CanvasItem({ item, zoom = 1, selected, panMode, animating, onContextMen
 
 
   const [dragging, setDragging] = useState(false)
-  const [editing, setEditing] = useState(false)
+  // A note grown from a connector drop opens ready to type (one-shot flag).
+  const [editing, setEditing] = useState(() => !!item.autoEdit)
+  useEffect(() => {
+    if (item.autoEdit) updateItem(item.id, { autoEdit: undefined })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
   const [sizing, setSizing] = useState(null) // 'scale' | 'crop' | 'free' — live badge
   const rootRef = useRef(null)
 
@@ -146,16 +151,37 @@ function CanvasItem({ item, zoom = 1, selected, panMode, animating, onContextMen
     )
     setDragging(true)
 
+    // Smart-guide targets: every other (non-moving) item's box, fixed for the
+    // whole drag. The moving selection's start box is offset by the drag delta.
+    const moving = new Set(ids)
+    const others = items.filter((it) => !moving.has(it.id) && it.type !== 'comment').map((it) => ({ x: it.x, y: it.y, w: it.width, h: it.height }))
+    const movingItems = items.filter((it) => moving.has(it.id))
+    const box0 = {
+      x: Math.min(...movingItems.map((it) => it.x)),
+      y: Math.min(...movingItems.map((it) => it.y)),
+    }
+    box0.w = Math.max(...movingItems.map((it) => it.x + it.width)) - box0.x
+    box0.h = Math.max(...movingItems.map((it) => it.y + it.height)) - box0.y
+    let snapAxes = { x: false, y: false }
+
     let moved = false
-    const move = (ev) => {
-      const dx = (ev.clientX - e.clientX) / zoom
-      const dy = (ev.clientY - e.clientY) / zoom
-      if (!moved && (Math.abs(ev.clientX - e.clientX) > 2 || Math.abs(ev.clientY - e.clientY) > 2)) {
-        moved = true
-        useCanvasStore.getState().pushHistory() // one undo entry for the whole drag
-        useCanvasStore.getState().setDraggingItems(true) // hide overlays during drag
-      }
-      if (!moved) return
+    let raf = 0
+    let lastEv = null
+    // Coalesce pointer moves to one store update per frame — mouse events can
+    // arrive several times per frame and each update re-renders the board.
+    const frame = () => {
+      raf = 0
+      const ev = lastEv
+      let dx = (ev.clientX - e.clientX) / zoom
+      let dy = (ev.clientY - e.clientY) / zoom
+      // Alt disables guides, matching Figma.
+      const g = ev.altKey ? null : snapToGuides({ ...box0, x: box0.x + dx, y: box0.y + dy }, others, 6 / zoom)
+      if (g) {
+        dx += g.dx
+        dy += g.dy
+        snapAxes = { x: g.snapX, y: g.snapY }
+      } else snapAxes = { x: false, y: false }
+      useCanvasStore.getState().setGuides(g?.guides || [])
       useCanvasStore.getState().applyPositions(
         ids.map((id) => {
           const st = starts.get(id)
@@ -171,7 +197,22 @@ function CanvasItem({ item, zoom = 1, selected, panMode, animating, onContextMen
         store.setDropTarget(store.groupAt(cx, cy, item.groupId))
       }
     }
+    const move = (ev) => {
+      if (!moved && (Math.abs(ev.clientX - e.clientX) > 2 || Math.abs(ev.clientY - e.clientY) > 2)) {
+        moved = true
+        useCanvasStore.getState().pushHistory() // one undo entry for the whole drag
+        useCanvasStore.getState().setDraggingItems(true) // hide overlays during drag
+      }
+      if (!moved) return
+      lastEv = ev
+      if (!raf) raf = requestAnimationFrame(frame)
+    }
     const up = () => {
+      if (raf) {
+        cancelAnimationFrame(raf)
+        frame()
+      }
+      useCanvasStore.getState().setGuides([])
       setDragging(false)
       useCanvasStore.getState().setDropTarget(null)
       useCanvasStore.getState().setDraggingItems(false)
@@ -181,7 +222,8 @@ function CanvasItem({ item, zoom = 1, selected, panMode, animating, onContextMen
         useCanvasStore.getState().applyPositions(
           ids.map((id) => {
             const it = cur.find((i) => i.id === id)
-            return { id, x: snapToGrid(it.x), y: snapToGrid(it.y) }
+            // An axis held by a smart guide keeps that exact alignment.
+            return { id, x: snapAxes.x ? it.x : snapToGrid(it.x), y: snapAxes.y ? it.y : snapToGrid(it.y) }
           })
         )
         // If the grabbed item is a comment, (re)anchor it to whatever image its
@@ -485,6 +527,15 @@ function CanvasItem({ item, zoom = 1, selected, panMode, animating, onContextMen
         )
         .sort((a, b) => (b.zIndex || 0) - (a.zIndex || 0))[0]
       if (hit) useCanvasStore.getState().addEdge(fromId, hit.id)
+      else if (Math.hypot(p.x - p0.x, p.y - p0.y) * useCanvasStore.getState().zoom > 40) {
+        // Dropped on empty board: grow a connected note there (Xmind-style),
+        // already in edit mode. One undo step for note + link.
+        const st = useCanvasStore.getState()
+        const w = 200
+        const h = 120
+        const noteId = st.addItem({ type: 'note', content: '', x: Math.round(p.x - w / 2), y: Math.round(p.y - h / 2), width: w, height: h, autoEdit: true })
+        st.addEdge(fromId, noteId, { history: false })
+      }
       setLinking(null)
     }
     window.addEventListener('mousemove', move)
@@ -511,6 +562,8 @@ function CanvasItem({ item, zoom = 1, selected, panMode, animating, onContextMen
       role="group"
       tabIndex={0}
       onMouseDown={startDrag}
+      onMouseEnter={() => useCanvasStore.getState().setHoverItem(item.id)}
+      onMouseLeave={() => useCanvasStore.getState().setHoverItem(null)}
       onContextMenu={(e) => {
         e.preventDefault()
         e.stopPropagation()
@@ -530,7 +583,7 @@ function CanvasItem({ item, zoom = 1, selected, panMode, animating, onContextMen
         transition: dragging
           ? 'none'
           : animating
-            ? `left 300ms ${TIDY_EASE}, top 300ms ${TIDY_EASE}`
+            ? `left 300ms ${TIDY_EASE}, top 300ms ${TIDY_EASE}, width 300ms ${TIDY_EASE}, height 300ms ${TIDY_EASE}`
             : sizeAnim
               ? `width 200ms ${TIDY_EASE}, height 200ms ${TIDY_EASE}, transform 80ms ease`
               : 'transform 80ms ease',

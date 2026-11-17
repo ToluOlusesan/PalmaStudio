@@ -1,7 +1,7 @@
 import { useEffect, useCallback, useRef, useState, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Minus, Plus, ArrowsIn, Crop, Play, Pause, FilmSlate, ArrowLineUp, ArrowLineDown, Copy, Clipboard, ArrowCounterClockwise, Trash, FolderOpen, LinkSimple, Export, ArrowRight, ArrowsLeftRight, SelectionPlus, SelectionSlash, AlignLeft, AlignRight, AlignTop, AlignBottom, AlignCenterHorizontal, AlignCenterVertical, Rows, Columns, Lock, LockOpen, TextT } from '@phosphor-icons/react'
-import { useCanvasStore } from '../../store/canvasStore.js'
+import { Minus, Plus, ArrowsIn, Crop, Play, Pause, FilmSlate, ArrowLineUp, ArrowLineDown, Copy, Clipboard, ArrowCounterClockwise, Trash, FolderOpen, LinkSimple, Export, ArrowRight, ArrowsLeftRight, SelectionPlus, SelectionSlash, AlignLeft, AlignRight, AlignTop, AlignBottom, AlignCenterHorizontal, AlignCenterVertical, Rows, Columns, Lock, LockOpen, TextT, Hand, GridFour, Kanban, ArrowsHorizontal } from '@phosphor-icons/react'
+import { useCanvasStore, GROUP_COLORS } from '../../store/canvasStore.js'
 import { useStoryboardStore } from '../../store/storyboardStore.js'
 import { useProjectStore } from '../../store/projectStore.js'
 import { useSessionStore } from '../../store/sessionStore.js'
@@ -18,6 +18,7 @@ import { copyItemsToClipboard } from '../../utils/systemClipboard.js'
 import { appendBoardItem, landBoardItem } from '../../utils/boardOps.js'
 import { uid } from '../../utils/id.js'
 import CanvasItem from './CanvasItem.jsx'
+import Connectors from './Connectors.jsx'
 import CanvasToolbar, { ToolDock } from './CanvasToolbar.jsx'
 import MediaLightbox from '../../components/MediaLightbox.jsx'
 import ContextMenu from '../../components/ContextMenu.jsx'
@@ -26,20 +27,6 @@ import ContextMenu from '../../components/ContextMenu.jsx'
 // by design. Pan (space/middle-drag or Pan tool), zoom (wheel), drop files,
 // paste screenshots, double-click for a note. Grid Snap is always on; Tidy and
 // Breathe are one-shot layout actions with single-level Ctrl/Cmd+Z undo.
-// Point where the ray from an item's centre toward (tx,ty) exits the item's box.
-// Used so connectors emerge from item edges rather than from hidden centres.
-const edgePoint = (it, tx, ty) => {
-  const cx = it.x + it.width / 2
-  const cy = it.y + it.height / 2
-  const dx = tx - cx
-  const dy = ty - cy
-  if (dx === 0 && dy === 0) return { x: cx, y: cy }
-  const sx = dx !== 0 ? it.width / 2 / Math.abs(dx) : Infinity
-  const sy = dy !== 0 ? it.height / 2 / Math.abs(dy) : Infinity
-  const s = Math.min(sx, sy)
-  return { x: cx + dx * s, y: cy + dy * s }
-}
-
 // Give a copied set of items fresh groupIds so duplicates/pastes form their own
 // independent groups instead of silently merging into the originals.
 const remapGroupIds = (arr) => {
@@ -73,17 +60,20 @@ export default function DumpBoard({
   const ungroup = useCanvasStore((s) => s.ungroup)
   const removeFromGroup = useCanvasStore((s) => s.removeFromGroup)
   const renameGroup = useCanvasStore((s) => s.renameGroup)
+  const setGroupLayout = useCanvasStore((s) => s.setGroupLayout)
+  const setGroupColor = useCanvasStore((s) => s.setGroupColor)
   const alignSelected = useCanvasStore((s) => s.alignSelected)
   const distributeSelected = useCanvasStore((s) => s.distributeSelected)
   const toggleLock = useCanvasStore((s) => s.toggleLock)
   const dropTargetGroupId = useCanvasStore((s) => s.dropTargetGroupId)
   const draggingItems = useCanvasStore((s) => s.draggingItems)
+  const guides = useCanvasStore((s) => s.guides)
+  const hoverItemId = useCanvasStore((s) => s.hoverItemId)
   const edges = useCanvasStore((s) => s.edges)
   const selectedEdgeId = useCanvasStore((s) => s.selectedEdgeId)
   const linking = useCanvasStore((s) => s.linking)
   const selectEdge = useCanvasStore((s) => s.selectEdge)
   const removeEdge = useCanvasStore((s) => s.removeEdge)
-  const setEdgeLabel = useCanvasStore((s) => s.setEdgeLabel)
 
   const deleteItem = useCanvasStore((s) => s.deleteItem)
   const bringToFront = useCanvasStore((s) => s.bringToFront)
@@ -139,6 +129,7 @@ export default function DumpBoard({
     for (const it of items) {
       if (!it.groupId) continue
       const g = m.get(it.groupId)
+      if (g) g.count++
       if (g) {
         g.minX = Math.min(g.minX, it.x)
         g.minY = Math.min(g.minY, it.y)
@@ -152,6 +143,8 @@ export default function DumpBoard({
           maxY: it.y + it.height,
           color: it.groupColor,
           name: it.groupName || '',
+          layout: it.groupLayout || 'free',
+          count: 1,
         })
       }
     }
@@ -169,7 +162,8 @@ export default function DumpBoard({
   // and lock state the floating toolbar needs. null for 0/1 selected.
   const selection = useMemo(() => {
     const sel = items.filter((it) => selectedIds.includes(it.id))
-    if (sel.length < 2) return null
+    const oneFrame = sel.length === 1 && sel[0].groupId && !items.some((it) => it.groupId === sel[0].groupId && it.id !== sel[0].id)
+    if (sel.length < 2 && !oneFrame) return null
     let minX = Infinity
     let minY = Infinity
     let maxX = -Infinity
@@ -190,12 +184,51 @@ export default function DumpBoard({
       count: sel.length,
       grouped,
       groupId: grouped ? [...groupIds][0] : null,
+      layout: grouped ? sel[0].groupLayout || 'free' : null,
       allLocked: sel.every((it) => it.locked),
     }
   }, [items, selectedIds])
 
   // Group / connector whose label is being edited inline (screen-space overlay).
   const [editingGroup, setEditingGroup] = useState(null)
+
+  // Drag a frame by its title: selects every member and moves them as one, one
+  // undo step. A click without movement just selects the frame.
+  const startFrameDrag = useCallback((e, groupId) => {
+    if (e.button !== 0) return
+    e.stopPropagation()
+    const st = useCanvasStore.getState()
+    const ids = st.items.filter((it) => it.groupId === groupId && !it.locked).map((it) => it.id)
+    st.setSelection(st.items.filter((it) => it.groupId === groupId).map((it) => it.id))
+    let lastX = e.clientX
+    let lastY = e.clientY
+    let moved = false
+    const move = (ev) => {
+      const z = useCanvasStore.getState().zoom
+      const dx = (ev.clientX - lastX) / z
+      const dy = (ev.clientY - lastY) / z
+      if (!moved && Math.hypot(ev.clientX - e.clientX, ev.clientY - e.clientY) < 3) return
+      if (!moved) {
+        moved = true
+        useCanvasStore.getState().pushHistory()
+        useCanvasStore.getState().setDraggingItems(true)
+      }
+      lastX = ev.clientX
+      lastY = ev.clientY
+      useCanvasStore.getState().moveBy(ids, dx, dy)
+    }
+    const up = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      if (!moved) return
+      const s2 = useCanvasStore.getState()
+      s2.setDraggingItems(false)
+      // Land on the grid like an item drag does.
+      s2.updateItems(s2.items.filter((it) => ids.includes(it.id)).map((it) => ({ id: it.id, x: snapToGrid(it.x), y: snapToGrid(it.y) })))
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }, [])
   const [editingEdge, setEditingEdge] = useState(null)
 
   // id → item lookup for resolving connector endpoints.
@@ -216,6 +249,14 @@ export default function DumpBoard({
     },
     [applyPositions]
   )
+
+  // Run a store mutation with the glide transition armed (frame layouts).
+  const glide = useCallback((fn) => {
+    setAnimating(true)
+    requestAnimationFrame(fn)
+    if (animTimer.current) clearTimeout(animTimer.current)
+    animTimer.current = setTimeout(() => setAnimating(false), 360)
+  }, [])
 
   const centreOfViewport = useCallback(() => {
     const el = canvasRef.current
@@ -784,8 +825,8 @@ export default function DumpBoard({
           ...(menu.item.groupId
             ? [
                 { label: 'Rename group', icon: TextT, onClick: () => setEditingGroup(menu.item.groupId) },
-                { label: 'Remove from group', icon: Minus, onClick: () => removeFromGroup(menu.item.id) },
-                { label: 'Ungroup', icon: SelectionSlash, hint: 'Ctrl ⇧ G', onClick: () => ungroup([menu.item.id]) },
+                { label: 'Remove from frame', icon: Minus, onClick: () => removeFromGroup(menu.item.id) },
+                { label: 'Unframe', icon: SelectionSlash, hint: 'Ctrl ⇧ G', onClick: () => ungroup([menu.item.id]) },
               ]
             : []),
           {
@@ -873,77 +914,18 @@ export default function DumpBoard({
         {/* Connectors — screen-space SVG (crisp at any zoom), painted behind the
             items layer. Lines run edge-to-edge; click to select, double-click to
             label. The dashed line is the in-progress drag from a link handle. */}
-        <svg className="absolute inset-0 w-full h-full pointer-events-none z-[1]">
-          <defs>
-            <marker id="palma-arrow" markerWidth="10" markerHeight="10" refX="7" refY="3.5" orient="auto" markerUnits="userSpaceOnUse">
-              <path d="M0,0 L7,3.5 L0,7 Z" fill="var(--connector)" />
-            </marker>
-            <marker id="palma-arrow-sel" markerWidth="10" markerHeight="10" refX="7" refY="3.5" orient="auto" markerUnits="userSpaceOnUse">
-              <path d="M0,0 L7,3.5 L0,7 Z" fill="var(--accent)" />
-            </marker>
-          </defs>
-          {edges.map((e) => {
-            const a = itemById.get(e.from)
-            const b = itemById.get(e.to)
-            if (!a || !b) return null
-            const ac = { x: a.x + a.width / 2, y: a.y + a.height / 2 }
-            const bc = { x: b.x + b.width / 2, y: b.y + b.height / 2 }
-            const p1 = edgePoint(a, bc.x, bc.y)
-            const p2 = edgePoint(b, ac.x, ac.y)
-            const x1 = panX + p1.x * zoom
-            const y1 = panY + p1.y * zoom
-            const x2 = panX + p2.x * zoom
-            const y2 = panY + p2.y * zoom
-            const sel = selectedEdgeId === e.id
-            // Curved connector: a quadratic bowed to one side by a fraction of its
-            // length (capped) so links read as soft arcs, not rigid lines. The end
-            // arrow rides the curve's tangent (marker orient="auto").
-            const dx = x2 - x1
-            const dy = y2 - y1
-            const len = Math.hypot(dx, dy) || 1
-            const bow = Math.min(len * 0.16, 56)
-            const cxp = (x1 + x2) / 2 + (-dy / len) * bow
-            const cyp = (y1 + y2) / 2 + (dx / len) * bow
-            const d = `M ${x1} ${y1} Q ${cxp} ${cyp} ${x2} ${y2}`
-            return (
-              <g key={e.id}>
-                <path
-                  d={d}
-                  fill="none" stroke="transparent" strokeWidth={16}
-                  style={{ pointerEvents: 'stroke', cursor: 'pointer' }}
-                  onMouseDown={(ev) => { ev.stopPropagation(); selectEdge(e.id) }}
-                  onDoubleClick={(ev) => { ev.stopPropagation(); setEditingEdge(e.id) }}
-                />
-                <path
-                  d={d}
-                  fill="none"
-                  stroke={sel ? 'var(--accent)' : 'var(--connector)'}
-                  strokeWidth={sel ? 2.5 : 1.5}
-                  markerEnd={`url(#${sel ? 'palma-arrow-sel' : 'palma-arrow'})`}
-                  style={{ pointerEvents: 'none' }}
-                />
-              </g>
-            )
-          })}
-          {linking &&
-            (() => {
-              const a = itemById.get(linking.fromId)
-              if (!a) return null
-              const p1 = edgePoint(a, linking.x, linking.y)
-              return (
-                <line
-                  x1={panX + p1.x * zoom}
-                  y1={panY + p1.y * zoom}
-                  x2={panX + linking.x * zoom}
-                  y2={panY + linking.y * zoom}
-                  stroke="var(--accent)"
-                  strokeWidth={1.5}
-                  strokeDasharray="5 4"
-                  style={{ pointerEvents: 'none' }}
-                />
-              )
-            })()}
-        </svg>
+        <Connectors
+          edges={edges}
+          itemById={itemById}
+          panX={panX}
+          panY={panY}
+          zoom={zoom}
+          selectedEdgeId={selectedEdgeId}
+          linking={linking}
+          editingEdge={editingEdge}
+          setEditingEdge={setEditingEdge}
+          hoverItemId={hoverItemId}
+        />
 
         <div
           data-canvas-bg="1"
@@ -979,19 +961,19 @@ export default function DumpBoard({
           {groupBoxes.map((g) => {
             const active = selectedGroupIds.has(g.id)
             const targeted = dropTargetGroupId === g.id
-            const color = g.color || 'var(--border-2)'
+            const color = g.color || '#8a8a8a'
             return (
               <div
                 key={g.id}
-                className="absolute pointer-events-none rounded-[10px]"
+                className={`frame-box absolute pointer-events-none ${animating ? 'gliding' : ''}`}
                 style={{
-                  left: g.minX - 8,
-                  top: g.minY - 8,
-                  width: g.maxX - g.minX + 16,
-                  height: g.maxY - g.minY + 16,
-                  border: `${targeted ? 2 : 1.5}px ${active || targeted ? 'solid' : 'dashed'} ${color}`,
-                  background: targeted ? 'rgba(10,10,10,0.05)' : 'transparent',
-                  opacity: active || targeted ? 0.95 : 0.6,
+                  left: g.minX - FRAME_PAD,
+                  top: g.minY - FRAME_PAD,
+                  width: g.maxX - g.minX + FRAME_PAD * 2,
+                  height: g.maxY - g.minY + FRAME_PAD * 2,
+                  borderRadius: 14,
+                  border: `1px solid color-mix(in srgb, ${color} ${active || targeted ? 70 : 28}%, transparent)`,
+                  background: `color-mix(in srgb, ${color} ${targeted ? 12 : 5}%, transparent)`,
                   zIndex: 0,
                 }}
               />
@@ -1010,6 +992,19 @@ export default function DumpBoard({
               onOpenMedia={setViewer}
             />
           ))}
+
+          {/* Smart guides — hairlines in canvas space, 1 screen px thick. */}
+          {guides.map((g, i) => (
+            <div
+              key={i}
+              className="absolute pointer-events-none"
+              style={
+                g.axis === 'x'
+                  ? { left: g.pos - 0.5 / zoom, top: g.from, width: 1 / zoom, height: g.to - g.from, background: 'var(--guide)', zIndex: 200000 }
+                  : { top: g.pos - 0.5 / zoom, left: g.from, height: 1 / zoom, width: g.to - g.from, background: 'var(--guide)', zIndex: 200000 }
+              }
+            />
+          ))}
         </div>
 
         {viewer && <MediaLightbox asset={viewer} onClose={() => setViewer(null)} />}
@@ -1022,23 +1017,21 @@ export default function DumpBoard({
         <div className="absolute inset-0 z-20 overflow-hidden pointer-events-none">
           {groupBoxes.map((g) => {
             const editing = editingGroup === g.id
-            const showName = g.name && !selectedGroupIds.has(g.id)
-            if (!showName && !editing) return null
-            const color = g.color || 'var(--border-2)'
-            const left = panX + (g.minX - 8) * zoom
-            const top = panY + (g.minY - 8) * zoom
+            const color = g.color || '#8a8a8a'
+            const left = panX + (g.minX - FRAME_PAD) * zoom
+            const top = panY + (g.minY - FRAME_PAD) * zoom
             return (
               <div
                 key={g.id}
                 className="absolute pointer-events-auto"
-                style={{ left, top, transform: 'translateY(-100%)' }}
+                style={{ left, top: top - 6, transform: 'translateY(-100%)' }}
                 onMouseDown={(e) => e.stopPropagation()}
               >
                 {editing ? (
                   <input
                     autoFocus
                     defaultValue={g.name}
-                    placeholder="Group name"
+                    placeholder="Frame name"
                     onBlur={(e) => {
                       renameGroup(g.id, e.target.value)
                       setEditingGroup(null)
@@ -1051,68 +1044,20 @@ export default function DumpBoard({
                         setEditingGroup(null)
                       }
                     }}
-                    className="mb-1 h-6 w-[150px] rounded-md bg-surface-2 border-[0.5px] border-[var(--border-2)] px-2 text-[11px] text-ink outline-none"
-                    style={{ boxShadow: `inset 2px 0 0 ${color}` }}
+                    className="h-6 w-[170px] rounded-md bg-surface border-[0.5px] border-[var(--border-2)] px-2 text-[12px] text-ink outline-none"
                   />
                 ) : (
-                  <button
-                    onClick={() => setEditingGroup(g.id)}
-                    title="Rename group"
-                    className="mb-1 flex items-center gap-1.5 h-6 max-w-[200px] rounded-md bg-surface-2 border-[0.5px] border-[var(--border-2)] px-2 text-[11px] leading-none hover:bg-surface-3 transition-colors"
-                  >
-                    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
-                    <span className="truncate text-ink">{g.name}</span>
-                  </button>
-                )}
-              </div>
-            )
-          })}
-        </div>
-
-        {/* Connector labels — screen-space chips at each line's midpoint. */}
-        <div className="absolute inset-0 z-20 overflow-hidden pointer-events-none">
-          {edges.map((e) => {
-            const a = itemById.get(e.from)
-            const b = itemById.get(e.to)
-            if (!a || !b) return null
-            const editing = editingEdge === e.id
-            if (!e.label && !editing) return null
-            const mx = panX + ((a.x + a.width / 2 + b.x + b.width / 2) / 2) * zoom
-            const my = panY + ((a.y + a.height / 2 + b.y + b.height / 2) / 2) * zoom
-            return (
-              <div
-                key={e.id}
-                className="absolute pointer-events-auto"
-                style={{ left: mx, top: my, transform: 'translate(-50%, -50%)' }}
-                onMouseDown={(ev) => ev.stopPropagation()}
-              >
-                {editing ? (
-                  <input
-                    autoFocus
-                    defaultValue={e.label}
-                    placeholder="Label"
-                    onBlur={(ev) => {
-                      setEdgeLabel(e.id, ev.target.value)
-                      setEditingEdge(null)
+                  <FrameTitle
+                    name={g.name}
+                    color={color}
+                    count={g.count}
+                    onPointerDown={(e) => startFrameDrag(e, g.id)}
+                    onRename={() => setEditingGroup(g.id)}
+                    onColor={() => {
+                      const i = GROUP_COLORS.indexOf(g.color)
+                      setGroupColor(g.id, GROUP_COLORS[(i + 1) % GROUP_COLORS.length])
                     }}
-                    onKeyDown={(ev) => {
-                      if (ev.key === 'Enter') {
-                        ev.preventDefault()
-                        ev.currentTarget.blur()
-                      } else if (ev.key === 'Escape') {
-                        setEditingEdge(null)
-                      }
-                    }}
-                    className="h-6 w-[130px] rounded-md bg-surface-2 border-[0.5px] border-[var(--border-2)] px-2 text-[11px] text-ink text-center outline-none"
                   />
-                ) : (
-                  <button
-                    onClick={() => setEditingEdge(e.id)}
-                    title="Edit label"
-                    className="max-w-[160px] truncate px-2 h-5 rounded-full bg-surface-2 border-[0.5px] border-[var(--border-2)] text-[10px] text-ink leading-none hover:bg-surface-3 transition-colors"
-                  >
-                    {e.label}
-                  </button>
                 )}
               </div>
             )
@@ -1128,9 +1073,10 @@ export default function DumpBoard({
           !editingGroup &&
           (() => {
             const cx = panX + ((selection.minX + selection.maxX) / 2) * zoom
-            const topY = panY + selection.minY * zoom
+            // A selected frame's title chip sits above it, so lift clear of it.
+            const topY = panY + selection.minY * zoom - (selection.grouped ? FRAME_PAD * zoom + 34 : 0)
             const below = topY < 56
-            const y = below ? panY + selection.maxY * zoom + 10 : topY - 10
+            const y = below ? panY + (selection.maxY + (selection.grouped ? FRAME_PAD : 0)) * zoom + 10 : topY - 10
             return (
               <div
                 className="absolute z-30"
@@ -1145,7 +1091,7 @@ export default function DumpBoard({
                   <SelBtn icon={AlignTop} label="Align top" onClick={() => alignSelected('top')} />
                   <SelBtn icon={AlignCenterHorizontal} label="Align vertical centres" onClick={() => alignSelected('vmiddle')} />
                   <SelBtn icon={AlignBottom} label="Align bottom" onClick={() => alignSelected('bottom')} />
-                  {selection.count >= 3 && (
+                  {selection.count >= 3 && !(selection.grouped && selection.layout !== 'free') && (
                     <>
                       <SelSep />
                       <SelBtn icon={Columns} label="Distribute horizontally" onClick={() => distributeSelected('h')} />
@@ -1155,11 +1101,15 @@ export default function DumpBoard({
                   <SelSep />
                   {selection.grouped ? (
                     <>
-                      <SelBtn icon={TextT} label="Rename group" onClick={() => setEditingGroup(selection.groupId)} />
-                      <SelBtn icon={SelectionSlash} label="Ungroup" onClick={() => ungroup(selectedIds)} />
+                      {LAYOUT_BTNS.map(({ mode, icon, label }) => (
+                        <SelBtn key={mode} icon={icon} label={label} active={selection.layout === mode} onClick={() => glide(() => setGroupLayout(selection.groupId, mode))} />
+                      ))}
+                      <SelSep />
+                      <SelBtn icon={TextT} label="Rename frame" onClick={() => setEditingGroup(selection.groupId)} />
+                      <SelBtn icon={SelectionSlash} label="Unframe" onClick={() => ungroup(selectedIds)} />
                     </>
                   ) : (
-                    <SelBtn icon={SelectionPlus} label="Group" onClick={() => group(selectedIds)} />
+                    <SelBtn icon={SelectionPlus} label="Frame selection (Ctrl G)" onClick={() => group(selectedIds)} />
                   )}
                   <SelBtn
                     icon={selection.allLocked ? LockOpen : Lock}
@@ -1301,7 +1251,7 @@ const SHORTCUTS = [
   ['Select all', 'Ctrl A'],
   ['Copy · Paste · Duplicate', 'Ctrl C · V · D'],
   ['Paste image / text / URL from clipboard', 'Ctrl V'],
-  ['Group · Ungroup', 'Ctrl G · Ctrl Shift G'],
+  ['Frame · Unframe', 'Ctrl G · Ctrl Shift G'],
   ['Lock · Unlock', 'Ctrl L'],
   ['Send to Storyboard', 'Ctrl B'],
   ['Connect items', 'Drag the top link dot'],
@@ -1406,14 +1356,45 @@ function ProjectPicker({ mode, count, projects, onPick, onClose }) {
 }
 
 // Floating selection-toolbar button + separator.
-function SelBtn({ icon: Icon, label, onClick, danger }) {
+const FRAME_PAD = 20
+const LAYOUT_BTNS = [
+  { mode: 'free', icon: Hand, label: 'Free layout' },
+  { mode: 'grid', icon: GridFour, label: 'Grid layout' },
+  { mode: 'masonry', icon: Kanban, label: 'Masonry layout' },
+  { mode: 'row', icon: ArrowsHorizontal, label: 'Row layout' },
+]
+
+// A frame's title: colour dot (click cycles the colour), name, member count.
+// Drag it to move the frame; click to select it; double-click to rename.
+function FrameTitle({ name, color, count, onPointerDown, onRename, onColor }) {
+  return (
+    <div
+      onPointerDown={onPointerDown}
+      onDoubleClick={onRename}
+      className="frame-title flex items-center gap-1.5 h-6 max-w-[240px] pl-1.5 pr-2 rounded-md text-[12px] leading-none cursor-grab active:cursor-grabbing select-none"
+    >
+      <button
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={onColor}
+        title="Change frame colour"
+        className="w-3 h-3 rounded-full shrink-0 transition-transform duration-150 hover:scale-125"
+        style={{ background: color }}
+      />
+      <span className={`truncate font-medium ${name ? 'text-ink' : 'text-ink-3'}`}>{name || 'Untitled frame'}</span>
+      <span className="text-ink-3 tabular-nums">{count}</span>
+    </div>
+  )
+}
+
+function SelBtn({ icon: Icon, label, onClick, danger, active }) {
   return (
     <button
       onClick={onClick}
       title={label}
       aria-label={label}
+      aria-pressed={active}
       className={`grid place-items-center w-7 h-7 rounded-md transition-colors hover:bg-[var(--sand-hover)] ${
-        danger ? 'text-ink-2 hover:text-warning' : 'text-ink-2 hover:text-ink'
+        active ? 'bg-[var(--sand-hover)] text-ink' : danger ? 'text-ink-2 hover:text-warning' : 'text-ink-2 hover:text-ink'
       }`}
     >
       <Icon size={16} weight="regular" />

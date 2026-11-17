@@ -1,3 +1,4 @@
+import { arrangeFrame } from '../utils/frameLayout.js'
 import { create } from 'zustand'
 import { uid } from '../utils/id.js'
 
@@ -17,6 +18,8 @@ const initial = {
   linking: null, // in-progress connector drag: { fromId, x, y } (canvas coords)
   past: [], // undo stack — snapshots of { items, maxZ, edges }
   future: [], // redo stack
+  hoverItemId: null, // item under the pointer (lights its connectors)
+  guides: [], // smart-guide segments while dragging: { axis, pos, from, to }
   dropTargetGroupId: null, // group highlighted as a drop target during a drag
   draggingItems: false, // true while items are being dragged (hides overlays)
 }
@@ -281,15 +284,25 @@ export const useCanvasStore = create((set, get) => ({
 
   // ---- Connectors --------------------------------------------------------
   // A line between two items. Drag from an item's link handle onto another.
-  addEdge: (from, to) => {
+  addEdge: (from, to, { history = true } = {}) => {
     if (!from || !to || from === to) return
     const dup = get().edges.some(
       (e) => (e.from === from && e.to === to) || (e.from === to && e.to === from)
     )
     if (dup) return
-    get().pushHistory()
+    if (history) get().pushHistory()
     const id = uid('edge')
-    set((s) => ({ edges: [...s.edges, { id, from, to }], selectedEdgeId: id, selectedIds: [] }))
+    set((s) => ({ edges: [...s.edges, { id, from, to, style: 'curve', endCap: 'arrow', fresh: true }], selectedEdgeId: id, selectedIds: [] }))
+    // `fresh` drives the one-shot draw-in animation; drop it once it has played.
+    setTimeout(() => set((s) => ({ edges: s.edges.map((e) => (e.id === id ? (({ fresh, ...rest }) => rest)(e) : e)) })), 500)
+    return id
+  },
+
+  // Patch a connector. history:false for continuous drags (caller pushed once).
+  updateEdge: (id, patch, { history = true } = {}) => {
+    if (!id) return
+    if (history) get().pushHistory()
+    set((s) => ({ edges: s.edges.map((e) => (e.id === id ? { ...e, ...patch } : e)) }))
   },
 
   removeEdge: (id) => {
@@ -317,7 +330,7 @@ export const useCanvasStore = create((set, get) => ({
   // Tag a set of items with a shared groupId (+ a frame colour) so they behave
   // as one unit. group() needs ≥2 items; ungroup() clears every group touched.
   group: (ids) => {
-    if (!ids || ids.length < 2) return
+    if (!ids || ids.length < 1) return
     get().pushHistory()
     const gid = uid('group')
     const color = pickGroupColor(get().items)
@@ -338,7 +351,7 @@ export const useCanvasStore = create((set, get) => ({
     set((s) => ({
       items: s.items.map((it) =>
         it.groupId && groups.has(it.groupId)
-          ? { ...it, groupId: undefined, groupColor: undefined }
+          ? { ...it, groupId: undefined, groupColor: undefined, groupName: undefined, groupLayout: undefined }
           : it
       ),
     }))
@@ -352,12 +365,12 @@ export const useCanvasStore = create((set, get) => ({
     if (!item || !item.groupId) return
     const gid = item.groupId
     const remaining = items.filter((it) => it.groupId === gid && it.id !== id)
-    const dissolve = remaining.length < 2
+    const dissolve = remaining.length < 1
     get().pushHistory()
     set((s) => ({
       items: s.items.map((it) => {
         if (it.id === id || (dissolve && it.groupId === gid)) {
-          return { ...it, groupId: undefined, groupColor: undefined, groupName: undefined }
+          return { ...it, groupId: undefined, groupColor: undefined, groupName: undefined, groupLayout: undefined }
         }
         return it
       }),
@@ -370,13 +383,78 @@ export const useCanvasStore = create((set, get) => ({
     if (!ids?.length || !groupId) return
     const member = get().items.find((it) => it.groupId === groupId)
     if (!member) return
-    const { groupColor, groupName } = member
+    const { groupColor, groupName, groupLayout } = member
     const sel = new Set(ids)
     set((s) => ({
       items: s.items.map((it) =>
-        sel.has(it.id) ? { ...it, groupId, groupColor, groupName } : it
+        sel.has(it.id) ? { ...it, groupId, groupColor, groupName, groupLayout } : it
       ),
     }))
+    if (groupLayout && groupLayout !== 'free') get().arrangeGroup(groupId)
+  },
+
+  // ---- Frames (groups with a layout) ------------------------------------
+  // Set a frame's layout and arrange it once (one undo step). 'free' just
+  // records the choice — members stay where they are.
+  setGroupLayout: (groupId, mode) => {
+    if (!groupId) return
+    get().pushHistory()
+    set((s) => ({ items: s.items.map((it) => (it.groupId === groupId ? { ...it, groupLayout: mode } : it)) }))
+    get().arrangeGroup(groupId)
+  },
+  // Re-apply a frame's stored layout (no history: callers already pushed).
+  arrangeGroup: (groupId) => {
+    const members = get().items.filter((it) => it.groupId === groupId)
+    const mode = members[0]?.groupLayout || 'free'
+    const patches = arrangeFrame(members, mode)
+    if (patches.length) {
+      get().updateItems(patches)
+      get().clearFrameOverlap(groupId)
+    }
+  },
+  // A layout can grow a frame into its neighbours. Shove whatever now overlaps
+  // it (whole frames, or loose items) to the right, cascading, so arranging one
+  // frame never piles it onto another.
+  clearFrameOverlap: (groupId) => {
+    const PAD = 20
+    const GAP = 48
+    const boxOf = (arr) => ({
+      x0: Math.min(...arr.map((m) => m.x)) - (arr[0].groupId ? PAD : 0),
+      y0: Math.min(...arr.map((m) => m.y)) - (arr[0].groupId ? PAD : 0),
+      x1: Math.max(...arr.map((m) => m.x + m.width)) + (arr[0].groupId ? PAD : 0),
+      y1: Math.max(...arr.map((m) => m.y + m.height)) + (arr[0].groupId ? PAD : 0),
+    })
+    const hit = (a, b) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1
+    let queue = [groupId]
+    const moved = new Set([groupId])
+    for (let guard = 0; queue.length && guard < 50; guard++) {
+      const key = queue.shift()
+      const items = get().items
+      const units = new Map()
+      for (const it of items) {
+        if (it.type === 'comment' && it.anchorId) continue
+        const k = it.groupId || it.id
+        if (!units.has(k)) units.set(k, [])
+        units.get(k).push(it)
+      }
+      const src = boxOf(units.get(key) || [])
+      for (const [k, arr] of units) {
+        if (moved.has(k) || arr.some((m) => m.locked)) continue
+        const b = boxOf(arr)
+        if (!hit(src, b) || b.x0 < src.x0) continue
+        const dx = src.x1 + GAP - b.x0
+        const ids = new Set(arr.map((m) => m.id))
+        for (const c of items) if (c.type === 'comment' && ids.has(c.anchorId)) ids.add(c.id)
+        get().moveBy([...ids], dx, 0)
+        moved.add(k)
+        queue.push(k)
+      }
+    }
+  },
+  setGroupColor: (groupId, color) => {
+    if (!groupId) return
+    get().pushHistory()
+    set((s) => ({ items: s.items.map((it) => (it.groupId === groupId ? { ...it, groupColor: color } : it)) }))
   },
 
   // Rename a group — sets (or clears) groupName on every member.
@@ -501,6 +579,8 @@ export const useCanvasStore = create((set, get) => ({
     return null
   },
 
+  setHoverItem: (id) => set((s) => (s.hoverItemId === id ? {} : { hoverItemId: id })),
+  setGuides: (guides) => set((s) => (s.guides.length === 0 && guides.length === 0 ? {} : { guides })),
   setDropTarget: (groupId) =>
     set((s) => (s.dropTargetGroupId === groupId ? {} : { dropTargetGroupId: groupId })),
 
@@ -519,6 +599,6 @@ export const useCanvasStore = create((set, get) => ({
         ? { ...it, src: undefined, missing: true }
         : it
     )
-    return { panX, panY, zoom, items: persisted, maxZ, edges }
+    return { panX, panY, zoom, items: persisted, maxZ, edges: edges.map(({ fresh, ...e }) => e) }
   },
 }))

@@ -779,3 +779,24 @@ input:focus {
     transition-duration: 0.001ms !important;
   }
 }
+
+/* ---- Frames (1.4) --------------------------------------------------------
+   The frame box eases its bounds only while members glide (layout/tidy), so
+   it tracks drags and resizes 1:1; the title is a quiet chip that only gains a surface on hover. */
+/* Smart-guide hairline: the one bright mark on the board, only mid-drag. */
+:root { --guide: #ff3b6b; }
+.frame-box { transition: border-color 150ms, background-color 150ms; }
+.frame-box.gliding {
+  transition: left 300ms cubic-bezier(0.22, 1, 0.36, 1), top 300ms cubic-bezier(0.22, 1, 0.36, 1),
+    width 300ms cubic-bezier(0.22, 1, 0.36, 1), height 300ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.frame-title { transition: background-color 120ms; }
+.frame-title:hover { background: var(--surface-2); }
+
+@media (prefers-reduced-motion: reduce) {
+  .frame-box { transition: none !important; }
+}
+
+/* New connector draws itself in along its path (pathLength=1 while fresh). */
+@keyframes connector-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+.connector-draw { stroke-dasharray: 1; stroke-dashoffset: 1; animation: connector-draw 360ms cubic-bezier(0.22, 1, 0.36, 1) forwards; }
