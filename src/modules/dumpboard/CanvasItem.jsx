@@ -1,7 +1,6 @@
 import { memo, useState, useEffect, useRef } from 'react'
-import { ImageBroken, ChatCircle, Minus, Lock, Target, Check, LinkSimple } from '@phosphor-icons/react'
+import { ImageBroken, ChatCircle, Minus, Lock, LinkSimple } from '@phosphor-icons/react'
 import { useCanvasStore } from '../../store/canvasStore.js'
-import { useFocusStore } from '../../store/focusStore.js'
 import { snapToGrid, loadImageSize } from '../../utils/canvasUtils.js'
 import { isGifItem } from '../../utils/pathUtils.js'
 import { hasCrop, resolveCrop, clampCrop, scaleCrop, cropStyle } from '../../utils/cropGeometry.js'
@@ -45,10 +44,6 @@ function CanvasItem({ item, zoom = 1, selected, panMode, animating, onContextMen
   const bringToFront = useCanvasStore((s) => s.bringToFront)
   const select = useCanvasStore((s) => s.select)
 
-  // Whether this item has been promoted to Focus (shows a corner dot), and a
-  // transient flag that plays the rainbow-rim sweep when it's sent.
-  const sent = useFocusStore((s) => s.queue.some((q) => q.sourceItemId === item.id))
-  const stamping = useFocusStore((s) => s.stampingId === item.id)
 
   const [dragging, setDragging] = useState(false)
   const [editing, setEditing] = useState(false)
@@ -521,7 +516,7 @@ function CanvasItem({ item, zoom = 1, selected, panMode, animating, onContextMen
         e.stopPropagation()
         onContextMenu?.(e, item)
       }}
-      className={`absolute group outline-none ${stamping ? 'sending-to-focus' : ''}`}
+      className={`absolute group outline-none`}
       style={{
         left: item.x,
         top: item.y,
@@ -611,43 +606,6 @@ function CanvasItem({ item, zoom = 1, selected, panMode, animating, onContextMen
         )}
       </div>
 
-      {/* Send to Focus — a frosted pill shown on hover. Images only (Focus is
-          image-only; videos are snapshot scaffolding and never promoted). Once
-          promoted it reads "Sent". Lives in the OUTER wrapper (a sibling of the
-          card, not inside its overflow-hidden box) so it's never clipped into a
-          cut-off rectangle on a narrow card — it always renders as a full pill.
-          Counter-scaled by --inv-zoom (clamped ≤1) so it stays crisp when zoomed
-          in without ballooning when zoomed out. whitespace-nowrap keeps it one
-          line. */}
-      {item.type === 'image' && !item.missing && !collapsed && (
-        <button
-          onMouseDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation()
-            useFocusStore.getState().sendToFocus(item)
-          }}
-          title={sent ? 'Sent to Focus' : 'Send to Focus'}
-          aria-label={sent ? 'Sent to Focus' : 'Send to Focus'}
-          className={`absolute left-1/2 z-10 inline-flex items-center gap-1.5 whitespace-nowrap px-2.5 py-1 rounded-full text-[11px] font-medium text-[#0a0a0a] opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity duration-150 ${
-            isGif ? 'top-1.5' : 'bottom-1.5'
-          }`}
-          style={{
-            background: 'rgba(255,255,255,0.82)',
-            backdropFilter: 'blur(6px)',
-            WebkitBackdropFilter: 'blur(6px)',
-            border: '0.5px solid var(--border)',
-            boxShadow: 'var(--shadow-soft)',
-            transform: 'translateX(-50%) scale(var(--control-inv-zoom, 1))',
-            // A GIF's frame transport owns the bottom of the card, so the pill
-            // moves to the top rather than sitting on top of the scrubber.
-            transformOrigin: isGif ? 'top center' : 'bottom center',
-          }}
-        >
-          {sent ? <Check size={13} weight="bold" /> : <Target size={13} />}
-          {sent ? 'Sent to Focus' : 'Send to Focus'}
-        </button>
-      )}
-
       {/* Link previews retain a quiet way back to the original post without
           turning the board into a feed. It is visible on hover/selection only. */}
       {item.sourceUrl && !item.missing && !collapsed && (
@@ -666,21 +624,11 @@ function CanvasItem({ item, zoom = 1, selected, panMode, animating, onContextMen
         </button>
       )}
 
-      {/* Sent-to-Focus marker — a small green dot in the top-right corner. Green
-          (not ink) so it reads as an active "promoted" state, not a stray mark. */}
-      {sent && !item.missing && !collapsed && (
-        <div
-          className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full pointer-events-none"
-          style={{ background: '#5FA968', boxShadow: '0 0 0 1.5px var(--bg)' }}
-          title="Sent to Focus"
-        />
-      )}
-
       {/* Resize handles (not on a collapsed comment pin, not when locked).
           Four corners plus a bar on each side: the side handles are what let you
           size a card against whatever sits next to it, since each handle pins the
           opposite side. Top and bottom centre are deliberately left free — the
-          connector dot lives at one and the Send-to-Focus pill at the other, and
+          connector dot lives at one, and
           both edges are still reachable from the corners. */}
       {!panMode && !collapsed && !item.locked && (
         <>

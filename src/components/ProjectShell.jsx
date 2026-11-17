@@ -9,7 +9,6 @@ import { useProjectStore } from '../store/projectStore.js'
 import { useSession } from '../hooks/useSession.js'
 
 import DumpBoard from '../modules/dumpboard/DumpBoard.jsx'
-import MoodBoard from '../modules/moodboard/MoodBoard.jsx'
 import StoryBoard from '../modules/storyboard/StoryBoard.jsx'
 import Scratchpad from '../modules/scratchpad/Scratchpad.jsx'
 
@@ -18,15 +17,13 @@ import Scratchpad from '../modules/scratchpad/Scratchpad.jsx'
 // `projectskin` route now redirects there (see below). Their files/slots may
 // linger but they're not wired here.
 const TABS = [
-  { key: 'dumpboard', label: 'Dump Board' },
-  { key: 'moodboard', label: 'Focus' },
+  { key: 'dumpboard', label: 'Board' },
   { key: 'storyboard', label: 'Storyboard' },
   { key: 'scratchpad', label: 'Notes' },
 ]
 
 const REGISTRY = {
   dumpboard: DumpBoard,
-  moodboard: MoodBoard,
   storyboard: StoryBoard,
   scratchpad: Scratchpad,
 }
@@ -62,8 +59,8 @@ export default function ProjectShell() {
   const { session, status } = useSession(id, module)
   const [exportOpen, setExportOpen] = useState(false)
 
-  // Project Skin merged into the Focus area — redirect its old route there.
-  if (module === 'projectskin') return <Navigate to={`/project/${id}/moodboard`} replace />
+  // Focus (and the older Project Skin) merged into the board as frames in 1.4.
+  if (module === 'projectskin' || module === 'moodboard') return <Navigate to={`/project/${id}/dumpboard`} replace />
   if (!REGISTRY[module]) return <Navigate to={`/project/${id}/dumpboard`} replace />
   if (!project && !session) return <Navigate to="/dashboard" replace />
 

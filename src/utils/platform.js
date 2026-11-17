@@ -432,3 +432,14 @@ export async function scanProjects(root) {
   }
   return []
 }
+
+// Convert an unplayable video (MPEG-TS, MKV with AC3/DTS audio) to a playable
+// MP4 beside it. Returns the new absolute path, or null when no ffmpeg exists.
+export async function remuxVideo(srcPath) {
+  if (!isElectron() || !electron().remuxVideo || !srcPath) return null
+  try {
+    return await electron().remuxVideo(srcPath)
+  } catch {
+    return null
+  }
+}

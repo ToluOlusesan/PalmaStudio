@@ -1,8 +1,7 @@
 import { useEffect, useCallback, useRef, useState, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Minus, Plus, ArrowsIn, Crop, Play, Pause, FilmSlate, ArrowLineUp, ArrowLineDown, Copy, Clipboard, ArrowCounterClockwise, Trash, FolderOpen, LinkSimple, Export, ArrowRight, ArrowsLeftRight, SelectionPlus, SelectionSlash, AlignLeft, AlignRight, AlignTop, AlignBottom, AlignCenterHorizontal, AlignCenterVertical, Rows, Columns, Lock, LockOpen, TextT, Target } from '@phosphor-icons/react'
+import { Minus, Plus, ArrowsIn, Crop, Play, Pause, FilmSlate, ArrowLineUp, ArrowLineDown, Copy, Clipboard, ArrowCounterClockwise, Trash, FolderOpen, LinkSimple, Export, ArrowRight, ArrowsLeftRight, SelectionPlus, SelectionSlash, AlignLeft, AlignRight, AlignTop, AlignBottom, AlignCenterHorizontal, AlignCenterVertical, Rows, Columns, Lock, LockOpen, TextT } from '@phosphor-icons/react'
 import { useCanvasStore } from '../../store/canvasStore.js'
-import { useFocusStore } from '../../store/focusStore.js'
 import { useStoryboardStore } from '../../store/storyboardStore.js'
 import { useProjectStore } from '../../store/projectStore.js'
 import { useSessionStore } from '../../store/sessionStore.js'
@@ -473,15 +472,6 @@ export default function DumpBoard({
         }
         return
       }
-      // Send the selection to the Focus board (queues each item there).
-      if (mod && key === 'f') {
-        if (sel.length) {
-          e.preventDefault()
-          const picked = useCanvasStore.getState().items.filter((it) => sel.includes(it.id))
-          picked.forEach((it) => useFocusStore.getState().sendToFocus(it))
-        }
-        return
-      }
       // Send the selection to the Storyboard, in selection order.
       if (mod && key === 'b') {
         if (sel.length) {
@@ -680,7 +670,7 @@ export default function DumpBoard({
     const p = await pickFile({
       title: 'Relink file',
       filters: [
-        { name: 'Media', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'svg', 'bmp', 'mp4', 'mov', 'webm', 'm4v', 'mkv'] },
+        { name: 'Media', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'svg', 'bmp', 'mp4', 'mov', 'webm', 'm4v', 'mkv', 'ts', 'm2ts', 'mts'] },
       ],
     })
     if (!p) return
@@ -827,7 +817,6 @@ export default function DumpBoard({
               ]
             : []),
           { separator: true },
-          { label: 'Send to Focus', icon: Target, hint: 'Ctrl F', onClick: () => menuTargetItems().forEach((it) => useFocusStore.getState().sendToFocus(it)) },
           { label: 'Send to Storyboard', icon: FilmSlate, hint: 'Ctrl B', onClick: () => sendToStoryboard(menuTargetItems()) },
           { separator: true },
           { label: 'Delete', icon: Trash, danger: true, hint: 'Del', onClick: () => deleteItem(menu.item.id) },
@@ -1314,7 +1303,6 @@ const SHORTCUTS = [
   ['Paste image / text / URL from clipboard', 'Ctrl V'],
   ['Group · Ungroup', 'Ctrl G · Ctrl Shift G'],
   ['Lock · Unlock', 'Ctrl L'],
-  ['Send to Focus', 'Ctrl F'],
   ['Send to Storyboard', 'Ctrl B'],
   ['Connect items', 'Drag the top link dot'],
   ['Delete selection', 'Del · Backspace'],

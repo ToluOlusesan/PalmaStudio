@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { sessionIO, blankSession } from '../utils/sessionIO.js'
+import { migrateFocus } from '../utils/migrateFocus.js'
 import { useCanvasStore } from './canvasStore.js'
 import { checkMissing } from '../utils/pathUtils.js'
 import { readSessionFile, saveSessionFile } from '../utils/platform.js'
@@ -31,8 +32,20 @@ function hydrateBoard(session, moduleKey) {
   if (!CANVAS_MODULES.includes(moduleKey)) return
   const board = session.modules?.[moduleKey] || {}
   // Object URLs don't survive reloads → flag file-backed items missing.
-  const items = (board.items || []).map((it) => ({ ...it, missing: checkMissing(it) }))
-  useCanvasStore.getState().hydrate({ ...board, items })
+  let items = (board.items || []).map((it) => ({ ...it, missing: checkMissing(it) }))
+  let maxZ = board.maxZ
+  const focus = moduleKey === 'dumpboard' ? session.modules?.focus : null
+  const migrated = focus && migrateFocus({ ...board, items }, focus)
+  if (migrated) ({ items, maxZ } = migrated)
+  useCanvasStore.getState().hydrate({ ...board, items, maxZ })
+  if (migrated) {
+    // Persist both halves after the current set() settles.
+    queueMicrotask(() => {
+      const st = useSessionStore.getState()
+      st.saveModule('focus', { ...focus, migrated: true })
+      st.saveModule('dumpboard', useCanvasStore.getState().snapshot())
+    })
+  }
 }
 
 export const useSessionStore = create((set, get) => ({

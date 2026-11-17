@@ -3,7 +3,7 @@
 // Tauri fs swap in v2.
 
 const IMAGE_EXT = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'svg', 'bmp', 'heic']
-const VIDEO_EXT = ['mp4', 'mov', 'webm', 'm4v', 'avi', 'mkv']
+const VIDEO_EXT = ['mp4', 'mov', 'webm', 'm4v', 'avi', 'mkv', 'ts', 'm2ts', 'mts']
 
 export function extOf(nameOrPath = '') {
   const clean = nameOrPath.split('?')[0].split('#')[0]

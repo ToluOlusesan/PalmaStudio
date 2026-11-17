@@ -7,6 +7,7 @@ const { autoUpdater } = require('electron-updater')
 const fs = require('fs')
 const fsp = require('fs/promises')
 const path = require('path')
+const { Readable } = require('stream')
 const windowState = require('./windowState.cjs')
 const { startClipServer } = require('./clipServer.cjs')
 const { downloadBestImage, pagePreview } = require('./imageSource.cjs')
@@ -60,6 +61,8 @@ const MIME = {
   m4v: 'video/x-m4v',
   avi: 'video/x-msvideo',
   mkv: 'video/x-matroska',
+  ts: 'video/mp2t',
+  m2ts: 'video/mp2t',
 }
 
 function extFromMime(contentType) {
@@ -160,15 +163,34 @@ app.whenReady().then(() => {
     try {
       const u = new URL(request.url)
       const filePath = decodeURIComponent(u.pathname).replace(/^\//, '')
-      const buf = await fsp.readFile(filePath)
+      const { size } = await fsp.stat(filePath)
       const ext = path.extname(filePath).slice(1).toLowerCase()
-      return new Response(buf, {
-        headers: {
-          'content-type': MIME[ext] || 'application/octet-stream',
-          'access-control-allow-origin': '*',
-          'cache-control': 'no-cache',
-        },
-      })
+      const headers = {
+        'content-type': MIME[ext] || 'application/octet-stream',
+        'access-control-allow-origin': '*',
+        'cache-control': 'no-cache',
+        'accept-ranges': 'bytes',
+      }
+      // Chromium seeks media by issuing Range requests; answering them with the
+      // whole file (200) makes <video> unseekable — scrubbing snapped back to 0
+      // and big files were read fully into memory. Serve 206 slices instead.
+      const range = /^bytes=(\d*)-(\d*)$/.exec(request.headers.get('range') || '')
+      if (range && size > 0) {
+        let start = range[1] === '' ? size - Number(range[2]) : Number(range[1])
+        let end = range[1] === '' || range[2] === '' ? size - 1 : Number(range[2])
+        start = Math.max(0, start)
+        end = Math.min(end, size - 1)
+        if (start > end) {
+          return new Response(null, { status: 416, headers: { ...headers, 'content-range': `bytes */${size}` } })
+        }
+        const stream = Readable.toWeb(fs.createReadStream(filePath, { start, end }))
+        return new Response(stream, {
+          status: 206,
+          headers: { ...headers, 'content-range': `bytes ${start}-${end}/${size}`, 'content-length': String(end - start + 1) },
+        })
+      }
+      const stream = Readable.toWeb(fs.createReadStream(filePath))
+      return new Response(stream, { headers: { ...headers, 'content-length': String(size) } })
     } catch {
       return new Response('Not found', {
         status: 404,
@@ -310,6 +332,46 @@ ipcMain.handle('copy-asset', async (_e, srcPath, targetDir, rel) => {
 // Recursively delete a file or folder on disk (project purge: wipe a project's
 // assets/ folder, or its whole folder). Guarded so a bad/empty path or a drive
 // root can never trigger a catastrophic recursive delete.
+
+// Remux a container Chromium can't demux (MPEG-TS) or whose audio it can't
+// decode (AC3/DTS in MKV) into a faststart MP4 next to the original. Video is
+// stream-copied (fast, lossless); audio is re-encoded to AAC. Uses the bundled
+// ffmpeg-static binary when packaged, else an ffmpeg on PATH; null if neither.
+function ffmpegBinary() {
+  try {
+    const p = require('ffmpeg-static')
+    if (p) {
+      const unpacked = p.replace('app.asar', 'app.asar.unpacked')
+      if (fs.existsSync(unpacked)) return unpacked
+    }
+  } catch { /* not installed */ }
+  return 'ffmpeg'
+}
+const remuxJobs = new Map()
+ipcMain.handle('remux-video', (_e, srcPath) => {
+  if (!srcPath || !fs.existsSync(srcPath)) return null
+  const out = srcPath.replace(/\.[^.\/]+$/, '') + '.palma.mp4'
+  if (fs.existsSync(out)) return out
+  if (remuxJobs.has(out)) return remuxJobs.get(out)
+  const job = new Promise((resolve) => {
+    const { spawn } = require('child_process')
+    let proc
+    try {
+      proc = spawn(ffmpegBinary(), ['-y', '-v', 'error', '-i', srcPath, '-map', '0:v:0', '-map', '0:a:0?',
+        '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', out], { windowsHide: true })
+    } catch {
+      return resolve(null)
+    }
+    proc.on('error', () => resolve(null))
+    proc.on('close', (code) => {
+      if (code === 0 && fs.existsSync(out)) return resolve(out)
+      fsp.rm(out, { force: true }).catch(() => {})
+      resolve(null)
+    })
+  }).finally(() => remuxJobs.delete(out))
+  remuxJobs.set(out, job)
+  return job
+})
 ipcMain.handle('delete-path', async (_e, target) => {
   try {
     if (typeof target !== 'string') return false

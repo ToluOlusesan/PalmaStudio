@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('palma', {
   getInboxDir: () => ipcRenderer.invoke('get-inbox-dir'),
   getDefaultProjectDir: (name) => ipcRenderer.invoke('get-default-project-dir', name),
   copyAsset: (srcPath, targetDir, rel) => ipcRenderer.invoke('copy-asset', srcPath, targetDir, rel),
+  remuxVideo: (p) => ipcRenderer.invoke('remux-video', p),
   deletePath: (p) => ipcRenderer.invoke('delete-path', p),
   downloadImageUrl: (url) => ipcRenderer.invoke('download-image-url', url),
   previewLinkUrl: (url) => ipcRenderer.invoke('preview-link-url', url),

@@ -5,7 +5,7 @@ import { useCanvasStore } from '../../store/canvasStore.js'
 import { useSessionStore } from '../../store/sessionStore.js'
 import { snapToGrid } from '../../utils/canvasUtils.js'
 import { assetPath } from '../../utils/pathUtils.js'
-import { saveAsset, toAssetUrl } from '../../utils/platform.js'
+import { saveAsset, toAssetUrl, remuxVideo } from '../../utils/platform.js'
 import { uid } from '../../utils/id.js'
 
 const fmt = (t = 0) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`
@@ -21,6 +21,20 @@ export default function CanvasVideo({ item, mediaClassName, mediaStyle }) {
   const [playing, setPlaying] = useState(false)
   const [time, setTime] = useState(0)
   const [duration, setDuration] = useState(0)
+  // 'ok' | 'converting' | 'failed' — Chromium can't demux MPEG-TS and can't
+  // decode AC3/DTS audio in MKV, so a load error triggers a one-time remux to
+  // MP4 beside the original. The item then points at the MP4 for good.
+  const [codec, setCodec] = useState('ok')
+  const updateItem = useCanvasStore((s) => s.updateItem)
+  const onMediaError = async () => {
+    if (codec !== 'ok' || !item.path || item.remuxed) return setCodec('failed')
+    setCodec('converting')
+    const out = await remuxVideo(item.path)
+    const src = out ? await toAssetUrl(out).catch(() => null) : null
+    if (!src) return setCodec('failed')
+    updateItem(item.id, { src, path: out, originalPath: item.path, remuxed: true })
+    setCodec('ok')
+  }
 
   const toggle = () => {
     const v = ref.current
@@ -91,9 +105,18 @@ export default function CanvasVideo({ item, mediaClassName, mediaStyle }) {
         onTimeUpdate={(e) => setTime(e.target.currentTime)}
         onLoadedMetadata={(e) => setDuration(e.target.duration)}
         onEnded={() => setPlaying(false)}
+        onError={onMediaError}
         className={mediaClassName || 'w-full h-full object-cover pointer-events-none'}
         style={mediaStyle}
       />
+
+      {codec !== 'ok' && (
+        <div className="absolute inset-0 grid place-items-center text-center px-3 text-[12px] leading-snug" style={{ color: '#d4d4d4' }}>
+          <span style={{ transform: 'scale(var(--control-inv-zoom, 1))' }}>
+            {codec === 'converting' ? 'Converting for playback…' : "This format can't play here. Install ffmpeg or convert it to MP4."}
+          </span>
+        </div>
+      )}
 
       {/* Keep the play target a readable screen size even when a large card is
           viewed at a low board zoom. */}

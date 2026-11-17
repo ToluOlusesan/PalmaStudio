@@ -1,29 +1,29 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, CaretDown, Check, Sun, Moon } from '@phosphor-icons/react'
 import { useSessionStore } from '../store/sessionStore.js'
-import { useFocusStore } from '../store/focusStore.js'
+import { framesAsZones } from '../utils/framesAsZones.js'
 import { useStoryboardStore } from '../store/storyboardStore.js'
 import { saveDataUrl } from '../utils/platform.js'
 import { exportBoardImage, boardToPdfDataUri } from '../utils/captureBoard.js'
 import { renderFocusBoard, focusBoardPdf, processBriefPdf } from '../utils/focusExport.js'
 
-// Unified export. A dropdown picks the target (Dump Board / Focus Board /
+// Unified export. A dropdown picks the target (Board / Frames /
 // Process Brief); the controls beneath adapt to it. Nothing is gated or graded —
 // every target is always selectable and exports whatever exists (an empty
 // section simply doesn't appear in the output). Process Brief is PDF-only and
 // carries a light/dark toggle, since it's the one output whose theme isn't just
 // the current view; boards export exactly as the canvas looks now.
 const TARGETS = [
-  { key: 'dumpboard', title: 'Dump Board', sub: 'Full canvas snapshot' },
-  { key: 'focus', title: 'Focus Board', sub: 'Zones and references' },
-  { key: 'brief', title: 'Process Brief', sub: 'Focus → sequence → notes' },
+  { key: 'dumpboard', title: 'Board', sub: 'Full canvas snapshot' },
+  { key: 'focus', title: 'Frames', sub: 'One page per frame' },
+  { key: 'brief', title: 'Process Brief', sub: 'Frames → sequence → notes' },
 ]
 
 export default function ExportModal({ open, onClose, context }) {
   // Pre-select the target matching the view it was opened from (Focus from the
   // Focus view, otherwise the Dump Board); never the Brief.
-  const [sel, setSel] = useState(context === 'moodboard' ? 'focus' : context === 'storyboard' ? 'brief' : 'dumpboard')
+  const [sel, setSel] = useState(context === 'storyboard' ? 'brief' : 'dumpboard')
   const [format, setFormat] = useState('png')
   const [scale, setScale] = useState(2)
   const [briefTheme, setBriefTheme] = useState('light')
@@ -38,16 +38,18 @@ export default function ExportModal({ open, onClose, context }) {
 
   // Which Focus zones to include (default all) — lets you export just the
   // zone(s) you want to share instead of the whole board every time.
-  const zones = useFocusStore((s) => s.zones)
   const panels = useStoryboardStore((s) => s.panels)
   const session = useSessionStore((s) => s.session)
+  const boardItems = session?.modules?.dumpboard?.items
+  const zones = useMemo(() => framesAsZones(boardItems).zones, [boardItems])
   const hasNotes = !!session?.modules?.scratchpad?.content?.trim()
   const hasDump = !!session?.modules?.dumpboard?.items?.length
   const [zoneSel, setZoneSel] = useState(() => new Set())
 
   useEffect(() => {
     if (!open) return
-    setSel(context === 'moodboard' ? 'focus' : context === 'storyboard' ? 'brief' : 'dumpboard')
+    useSessionStore.getState().flush()
+    setSel(context === 'storyboard' ? 'brief' : 'dumpboard')
     setFormat('png')
     setScale(2)
     setBriefTheme('light')
@@ -57,7 +59,7 @@ export default function ExportModal({ open, onClose, context }) {
     setIncludeNotes(true)
     setPreviewUrl(null)
     setDdOpen(false)
-    setZoneSel(new Set(useFocusStore.getState().zones.map((z) => z.id)))
+    setZoneSel(new Set(framesAsZones(useSessionStore.getState().session?.modules?.dumpboard?.items).zones.map((z) => z.id)))
   }, [open, context])
 
   useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl) }, [previewUrl])
@@ -99,7 +101,7 @@ export default function ExportModal({ open, onClose, context }) {
   const makeBrief = async () => {
     useSessionStore.getState().flush()
     const sess = useSessionStore.getState().session
-    const fs = useFocusStore.getState()
+    const fs = framesAsZones(sess?.modules?.dumpboard?.items)
     const story = useStoryboardStore.getState()
     return processBriefPdf({
       projectName: sess?.name || 'Untitled',
@@ -135,7 +137,7 @@ export default function ExportModal({ open, onClose, context }) {
     try {
       useSessionStore.getState().flush()
       const sess = useSessionStore.getState().session
-      const fs = useFocusStore.getState()
+      const fs = framesAsZones(sess?.modules?.dumpboard?.items)
       const dumpItems = sess?.modules?.dumpboard?.items || []
       const dumpEdges = sess?.modules?.dumpboard?.edges || []
 
@@ -156,10 +158,10 @@ export default function ExportModal({ open, onClose, context }) {
             theme: focusTheme,
             projectName: sess?.name || 'Untitled',
           })
-          if (uri) await saveDataUrl(`focus-board-${focusTheme}.pdf`, uri, [{ name: 'PDF', extensions: ['pdf'] }])
+          if (uri) await saveDataUrl(`frames-${focusTheme}.pdf`, uri, [{ name: 'PDF', extensions: ['pdf'] }])
         } else {
           const url = await renderFocusBoard(pickedZones, fs.placed, fs.queue, { scale, max: scale >= 2 ? 4000 : 2500, theme: focusTheme })
-          if (url) await saveDataUrl(`focus-board-${focusTheme}.png`, url, [{ name: 'PNG Image', extensions: ['png'] }])
+          if (url) await saveDataUrl(`frames-${focusTheme}.png`, url, [{ name: 'PNG Image', extensions: ['png'] }])
         }
       } else {
         const uri = await makeBrief()
@@ -303,7 +305,7 @@ export default function ExportModal({ open, onClose, context }) {
                 <div className="flex flex-col gap-1.5">
                   <span className="text-[10px] uppercase tracking-[0.1em] text-ink-3 font-semibold">Include in brief</span>
                   <p className="text-[11px] text-ink-3 leading-relaxed mb-1">
-                    Authored Focus zones and sequence lead the document.
+                    Frames and the sequence lead the document.
                   </p>
                   <BriefOption label={`Storyboard${panels.length ? ` · ${panels.length} shots` : ''}`} checked={includeStoryboard} disabled={!panels.length} onChange={setIncludeStoryboard} />
                   <BriefOption label="Project Notes" checked={includeNotes} disabled={!hasNotes} onChange={setIncludeNotes} />
