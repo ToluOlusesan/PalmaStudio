@@ -596,11 +596,11 @@ function CanvasItem({ item, zoom = 1, selected, panMode, animating, onContextMen
           e.stopPropagation()
           onOpenMedia?.(item)
         }}
-        className={`card-in w-full h-full overflow-hidden relative bg-surface-2 ${
-          selected || dragging ? '' : 'card-rest'
+        className={`card-in w-full h-full overflow-hidden relative ${item.placeholder ? '' : 'bg-surface-2'} ${
+          selected || dragging || item.placeholder ? '' : 'card-rest'
         } ${collapsed ? 'rounded-full' : 'rounded-[6px]'}`}
         style={{
-          border: '0.5px solid var(--border-2)',
+          border: item.placeholder ? 'none' : '0.5px solid var(--border-2)',
           // Selected/dragging take an explicit shadow (ring + lift). At rest the
           // `card-rest` class owns the shadow so it can lift smoothly on hover.
           ...(selected || dragging
@@ -900,6 +900,23 @@ function CommentItem({ item, collapsed, editing, setEditing, updateItem }) {
 }
 
 function NoteItem({ item, zoom = 1, editing, setEditing, updateItem }) {
+  // Template slot: a dashed hint that real references replace on drop. Typing
+  // into it (double-click) promotes it to an ordinary note.
+  if (item.placeholder && !editing) {
+    return (
+      <div
+        className="w-full h-full grid place-items-center text-center px-3 rounded-[inherit]"
+        style={{ border: '1.5px dashed var(--border-2)', background: 'color-mix(in srgb, var(--surface) 55%, transparent)' }}
+        onDoubleClick={(e) => {
+          e.stopPropagation()
+          updateItem(item.id, { placeholder: undefined, content: '' })
+          setEditing(true)
+        }}
+      >
+        <span className="text-ink-3 leading-snug" style={{ fontSize: Math.max(12, 8 / Math.max(0.1, zoom)) }}>{item.content || 'Drop a reference'}</span>
+      </div>
+    )
+  }
   const tint = item.color || NOTE_COLORS[0]
   // Keep note text at a modest readable size on screen when the board is zoomed
   // out. The card itself stays at its intended canvas size and position.

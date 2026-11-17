@@ -1,6 +1,6 @@
 import { useEffect, useCallback, useRef, useState, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Minus, Plus, ArrowsIn, Crop, Play, Pause, FilmSlate, ArrowLineUp, ArrowLineDown, Copy, Clipboard, ArrowCounterClockwise, Trash, FolderOpen, LinkSimple, Export, ArrowRight, ArrowsLeftRight, SelectionPlus, SelectionSlash, AlignLeft, AlignRight, AlignTop, AlignBottom, AlignCenterHorizontal, AlignCenterVertical, Rows, Columns, Lock, LockOpen, TextT, Hand, GridFour, Kanban, ArrowsHorizontal } from '@phosphor-icons/react'
+import { Minus, Plus, ArrowsIn, Crop, Play, Pause, FilmSlate, ArrowLineUp, ArrowLineDown, Copy, Clipboard, ArrowCounterClockwise, Trash, FolderOpen, LinkSimple, Export, ArrowRight, ArrowsLeftRight, SelectionPlus, SelectionSlash, AlignLeft, AlignRight, AlignTop, AlignBottom, AlignCenterHorizontal, AlignCenterVertical, Rows, Columns, Lock, LockOpen, TextT, Hand, GridFour, Kanban, ArrowsHorizontal, SquareSplitHorizontal, CopySimple } from '@phosphor-icons/react'
 import { useCanvasStore, GROUP_COLORS } from '../../store/canvasStore.js'
 import { useStoryboardStore } from '../../store/storyboardStore.js'
 import { useProjectStore } from '../../store/projectStore.js'
@@ -19,6 +19,9 @@ import { appendBoardItem, landBoardItem } from '../../utils/boardOps.js'
 import { uid } from '../../utils/id.js'
 import CanvasItem from './CanvasItem.jsx'
 import Connectors from './Connectors.jsx'
+import TemplatePicker from './TemplatePicker.jsx'
+import CompareView from './CompareView.jsx'
+import { templateItems } from '../../utils/boardTemplates.js'
 import CanvasToolbar, { ToolDock } from './CanvasToolbar.jsx'
 import MediaLightbox from '../../components/MediaLightbox.jsx'
 import ContextMenu from '../../components/ContextMenu.jsx'
@@ -279,6 +282,80 @@ export default function DumpBoard({
     },
     [addItem, centreOfViewport]
   )
+
+  // ---- Directions ------------------------------------------------------
+  // Compare: open the frame beside its most likely counterpart — another
+  // "Direction …" frame if this is one, else the nearest frame on the board.
+  const [compare, setCompare] = useState(null)
+  const openCompare = useCallback((groupId) => {
+    const its = useCanvasStore.getState().items
+    const boxes = new Map()
+    for (const it of its) {
+      if (!it.groupId) continue
+      const b = boxes.get(it.groupId) || { id: it.groupId, name: it.groupName || '', x: 0, y: 0, n: 0 }
+      b.x += it.x
+      b.y += it.y
+      b.n++
+      boxes.set(it.groupId, b)
+    }
+    const me = boxes.get(groupId)
+    const others = [...boxes.values()].filter((b) => b.id !== groupId)
+    if (!me || !others.length) return flashToast('Add another frame to compare against')
+    // Siblings first ("Mood" ↔ "Mood B"), then other "Direction …" frames.
+    const stem = (n) => n.replace(/\s+[A-Z]$/, '').toLowerCase()
+    const siblings = others.filter((b) => me.name && stem(b.name) === stem(me.name))
+    const dirLike = (b) => /^direction/i.test(b.name)
+    const pool = siblings.length ? siblings : dirLike(me) && others.some(dirLike) ? others.filter(dirLike) : others
+    const d = (b) => Math.hypot(b.x / b.n - me.x / me.n, b.y / b.n - me.y / me.n)
+    setCompare({ left: groupId, right: pool.sort((a, b) => d(a) - d(b))[0].id })
+  }, [flashToast])
+
+  // Duplicate a frame as a new direction beside it ("Mood" → "Mood B").
+  const duplicateFrame = useCallback((groupId) => {
+    const st = useCanvasStore.getState()
+    const members = st.items.filter((it) => it.groupId === groupId)
+    if (!members.length) return
+    const maxX = Math.max(...members.map((m) => m.x + m.width))
+    const minX = Math.min(...members.map((m) => m.x))
+    const base = (members[0].groupName || 'Direction').replace(/\s+[A-Z]$/, '')
+    const taken = new Set(st.items.map((it) => it.groupName).filter(Boolean))
+    let letter = 'B'
+    while (taken.has(`${base} ${letter}`)) letter = String.fromCharCode(letter.charCodeAt(0) + 1)
+    const gid = uid('group')
+    const used = new Set(st.items.map((it) => it.groupColor))
+    const color = GROUP_COLORS.find((c) => !used.has(c)) || GROUP_COLORS[(GROUP_COLORS.indexOf(members[0].groupColor) + 1) % GROUP_COLORS.length]
+    const dx = maxX - minX + 96
+    st.addItems(members.map(({ id, zIndex, ...rest }) => ({ ...rest, x: rest.x + dx, groupId: gid, groupName: `${base} ${letter}`, groupColor: color }))) // eslint-disable-line no-unused-vars
+    glide(() => useCanvasStore.getState().clearFrameOverlap(gid))
+  }, [glide])
+
+  // Drop a template's frames at the viewport centre, then frame them in view.
+  const [templatesOpen, setTemplatesOpen] = useState(false)
+  const insertTemplate = useCallback((tpl) => {
+    setTemplatesOpen(false)
+    const st = useCanvasStore.getState()
+    const c = centreOfViewport()
+    const used = new Set(st.items.map((it) => it.groupColor).filter(Boolean))
+    const colors = [...GROUP_COLORS.filter((x) => !used.has(x)), ...GROUP_COLORS.filter((x) => used.has(x))]
+    const draft = templateItems(tpl, 0, 0, colors, uid)
+    const w = Math.max(...draft.map((it) => it.x + it.width))
+    const h = Math.max(...draft.map((it) => it.y + it.height))
+    let ox = snapToGrid(c.x - w / 2)
+    let oy = snapToGrid(c.y - h / 2)
+    // Never land on existing work: if the centred spot collides, go to the
+    // right of everything on the board, top-aligned with it.
+    const hits = st.items.some((it) => it.x < ox + w + 60 && ox - 60 < it.x + it.width && it.y < oy + h + 60 && oy - 60 < it.y + it.height)
+    if (hits) {
+      ox = snapToGrid(Math.max(...st.items.map((it) => it.x + it.width)) + 200)
+      oy = snapToGrid(Math.min(...st.items.map((it) => it.y)))
+    }
+    st.addItems(draft.map((it) => ({ ...it, x: it.x + ox, y: it.y + oy })))
+    requestAnimationFrame(() => {
+      zoomToSelection()
+      useCanvasStore.getState().clearSelection()
+    })
+  }, [centreOfViewport, zoomToSelection])
+
 
   // Annotation comment — starts expanded + empty (so you can type at once), then
   // minimises to a pin once you've written it.
@@ -1105,6 +1182,9 @@ export default function DumpBoard({
                         <SelBtn key={mode} icon={icon} label={label} active={selection.layout === mode} onClick={() => glide(() => setGroupLayout(selection.groupId, mode))} />
                       ))}
                       <SelSep />
+                      <SelBtn icon={SquareSplitHorizontal} label="Compare side by side" onClick={() => openCompare(selection.groupId)} />
+                      <SelBtn icon={CopySimple} label="Duplicate as new direction" onClick={() => duplicateFrame(selection.groupId)} />
+                      <SelSep />
                       <SelBtn icon={TextT} label="Rename frame" onClick={() => setEditingGroup(selection.groupId)} />
                       <SelBtn icon={SelectionSlash} label="Unframe" onClick={() => ungroup(selectedIds)} />
                     </>
@@ -1215,8 +1295,11 @@ export default function DumpBoard({
           onAddComment={() => addComment()}
           onAddFiles={addFiles}
           onTidy={handleTidy}
+          onTemplates={() => setTemplatesOpen((v) => !v)}
           extra={tools}
         />
+        {compare && <CompareView leftId={compare.left} rightId={compare.right} onClose={() => setCompare(null)} />}
+        {templatesOpen && <TemplatePicker onPick={insertTemplate} onClose={() => setTemplatesOpen(false)} />}
 
         {/* Zoom control — vertical stack, pinned bottom-right, always visible.
             The reliable way to zoom the board (trackpad pinch isn't forwarded by

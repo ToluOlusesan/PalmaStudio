@@ -385,10 +385,21 @@ export const useCanvasStore = create((set, get) => ({
     if (!member) return
     const { groupColor, groupName, groupLayout } = member
     const sel = new Set(ids)
+    // Template placeholder slots give way to real references: each incoming
+    // item takes the next free slot's position and the slot is removed.
+    const slots = get().items.filter((it) => it.groupId === groupId && it.placeholder && !sel.has(it.id))
+    const take = new Map()
+    ids.forEach((id, i) => { if (slots[i]) take.set(id, slots[i]) })
+    const dead = new Set([...take.values()].map((p) => p.id))
     set((s) => ({
-      items: s.items.map((it) =>
-        sel.has(it.id) ? { ...it, groupId, groupColor, groupName, groupLayout } : it
-      ),
+      items: s.items
+        .filter((it) => !dead.has(it.id))
+        .map((it) => {
+          if (!sel.has(it.id)) return it
+          const slot = take.get(it.id)
+          return { ...it, groupId, groupColor, groupName, groupLayout, ...(slot ? { x: slot.x, y: slot.y } : {}) }
+        }),
+      edges: s.edges.filter((e) => !dead.has(e.from) && !dead.has(e.to)),
     }))
     if (groupLayout && groupLayout !== 'free') get().arrangeGroup(groupId)
   },
