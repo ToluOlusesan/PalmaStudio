@@ -5,6 +5,51 @@ All notable changes to Palma are recorded here. Versions follow
 installer — electron-updater downloads only the changed blocks against the
 previously installed version (via the `.blockmap` published with each build).
 
+## [1.4.0] — 2026-11-17 · beta
+
+Palma becomes an art-direction board: one canvas where references are
+collected, framed into directions, connected, and compared.
+
+### Added
+- **Frames.** Select references and press `Ctrl G` to frame them. A frame has
+  a title (drag it to move the frame, double-click to rename, click the dot to
+  recolour), a soft tint, and a layout — free, grid, masonry or row — that
+  glides members into place with an even gutter and nudges neighbouring work
+  aside instead of piling onto it.
+- **Board templates** from the new Templates button in the dock: Direction
+  board, Direction A / B, Motion study, World building, or an empty frame.
+  Frames arrive with dashed hint slots; drop a reference into a frame and it
+  takes the next slot.
+- **Compare side by side.** Select a frame → Compare to review two directions
+  as equal columns with their extracted palettes. "Mood" pairs with "Mood B"
+  automatically; either side can switch frames, and Swap flips them.
+- **Duplicate as new direction** copies a frame beside itself as "… B".
+- **Smart guides.** Dragging snaps to other items' edges and centres with a
+  hairline guide; hold `Alt` to drag freely.
+
+### Changed
+- **Connectors rebuilt as splines.** Lines leave each item square to a side and
+  re-route as things move. Choose curved, elbow or straight; drag the line to
+  bend it; set arrows at one end, both or neither; make it dashed. Labels sit on
+  the line and slide along it. Drag either end to reconnect. Hovering an item
+  lights its connections, and new links draw themselves in.
+- **Drop a link on empty board to grow a connected note**, ready to type.
+- **Focus is now part of the board.** The Focus tab and Send to Focus are gone;
+  existing Focus zones are moved onto the board once, as named frames holding
+  the same references and pinned notes. Export → Frames produces the styled
+  one-page-per-frame PDF, and the Process Brief reads frames too.
+- The Dump Board is now simply **Board**.
+- Dragging is smoother: moves are batched to one update per frame.
+
+### Fixed
+- **Video scrubbing works.** Local media is now served in byte ranges, so the
+  player can seek (it used to snap back to the start), and large files stream
+  instead of loading whole into memory.
+- **`.ts` / `.m2ts` and MKV files with unsupported audio** are converted to MP4
+  beside the original the first time they fail to play, when ffmpeg is
+  available — otherwise the card says why it can't play instead of staying
+  black.
+
 ## [1.3.4] — 2026-09-29
 
 ### Changed

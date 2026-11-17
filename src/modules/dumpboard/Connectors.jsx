@@ -44,7 +44,9 @@ function track(ev, { onMove, onEnd, onClick, history = true }) {
   window.addEventListener('pointerup', up)
 }
 
-export default function Connectors({ edges, itemById, panX, panY, zoom, selectedEdgeId, linking, editingEdge, setEditingEdge, hoverItemId }) {
+export default function Connectors({ edges, itemById, panX, panY, zoom, selectedEdgeId, linking, editingEdge, setEditingEdge }) {
+  // Subscribed here, not in DumpBoard, so hovering re-renders only the lines.
+  const hoverItemId = useCanvasStore((s) => (s.edges.length ? s.hoverItemId : null))
   const selectEdge = useCanvasStore((s) => s.selectEdge)
   const updateEdge = useCanvasStore((s) => s.updateEdge)
   const removeEdge = useCanvasStore((s) => s.removeEdge)

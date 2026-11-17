@@ -309,7 +309,7 @@ export default function ExportModal({ open, onClose, context }) {
                   </p>
                   <BriefOption label={`Storyboard${panels.length ? ` · ${panels.length} shots` : ''}`} checked={includeStoryboard} disabled={!panels.length} onChange={setIncludeStoryboard} />
                   <BriefOption label="Project Notes" checked={includeNotes} disabled={!hasNotes} onChange={setIncludeNotes} />
-                  <BriefOption label="Dump Board appendix" checked={includeDump} disabled={!hasDump} onChange={setIncludeDump} />
+                  <BriefOption label="Board appendix" checked={includeDump} disabled={!hasDump} onChange={setIncludeDump} />
                 </div>
               )}
 

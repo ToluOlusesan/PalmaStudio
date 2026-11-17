@@ -204,7 +204,7 @@ function EmptyState({ onAdd }) {
         <FilmSlate size={26} className="text-ink-3 mx-auto mb-3" />
         <p className="font-serif text-[17px] text-ink mb-1.5">Build the sequence</p>
         <p className="text-[12px] text-ink-3 font-light leading-relaxed mb-4">
-          Send references from the Dump Board with{' '}
+          Send references from the Board with{' '}
           <span className="font-mono text-[11px] text-ink-2">Ctrl B</span> — each one lands as the
           next shot. Or block the story out first with empty panels and fill them in later.
         </p>

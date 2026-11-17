@@ -137,8 +137,8 @@ function TopBar({ title = 'On my Way', crumb = 'Projects ›' }) {
 }
 
 const TAB_DEFS = {
-  dump: { x: CX0 + 10, label: 'Dump Board', w: 36 },
-  focus: { x: CX0 + 54, label: 'Focus', w: 19 },
+  dump: { x: CX0 + 10, label: 'Board', w: 36 },
+  focus: { x: CX0 + 54, label: 'Story', w: 19 },
   scratchpad: { x: CX0 + 81, label: 'Scratchpad', w: 35 },
 }
 function Tabs({ active }) {

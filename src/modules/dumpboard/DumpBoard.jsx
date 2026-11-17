@@ -71,7 +71,6 @@ export default function DumpBoard({
   const dropTargetGroupId = useCanvasStore((s) => s.dropTargetGroupId)
   const draggingItems = useCanvasStore((s) => s.draggingItems)
   const guides = useCanvasStore((s) => s.guides)
-  const hoverItemId = useCanvasStore((s) => s.hoverItemId)
   const edges = useCanvasStore((s) => s.edges)
   const selectedEdgeId = useCanvasStore((s) => s.selectedEdgeId)
   const linking = useCanvasStore((s) => s.linking)
@@ -1001,7 +1000,6 @@ export default function DumpBoard({
           linking={linking}
           editingEdge={editingEdge}
           setEditingEdge={setEditingEdge}
-          hoverItemId={hoverItemId}
         />
 
         <div
