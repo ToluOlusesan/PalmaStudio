@@ -19,7 +19,6 @@ const initial = {
   past: [], // undo stack — snapshots of { items, maxZ, edges }
   future: [], // redo stack
   hoverItemId: null, // item under the pointer (lights its connectors)
-  guides: [], // smart-guide segments while dragging: { axis, pos, from, to }
   dropTargetGroupId: null, // group highlighted as a drop target during a drag
   draggingItems: false, // true while items are being dragged (hides overlays)
 }
@@ -30,6 +29,9 @@ const snap = (s) => ({ items: s.items, maxZ: s.maxZ, edges: s.edges })
 // Frame colours for groups — the second sanctioned place colour appears (after
 // comments). Cream is intentionally omitted (too close to the accent).
 export const GROUP_COLORS = ['#D85C53', '#D89A4E', '#5FA968', '#5B8BC4', '#9B7BC4', '#C45B8B']
+// Picker swatches: the auto-assigned set plus a few extras that are only ever
+// chosen by hand (auto-assignment stays on GROUP_COLORS).
+export const FRAME_SWATCHES = [...GROUP_COLORS, '#D4B83C', '#4FA3A5', '#9A7455', '#8A8A8A']
 
 // Pick the least-used frame colour so adjacent groups stay visually distinct.
 const pickGroupColor = (items) => {
@@ -385,6 +387,8 @@ export const useCanvasStore = create((set, get) => ({
     if (!member) return
     const { groupColor, groupName, groupLayout } = member
     const sel = new Set(ids)
+    // (Templates were removed in 1.4.1; nothing creates placeholders now, but
+    // boards saved under 1.4.0 still carry them — keep this path working.)
     // Template placeholder slots give way to real references: each incoming
     // item takes the next free slot's position and the slot is removed.
     const slots = get().items.filter((it) => it.groupId === groupId && it.placeholder && !sel.has(it.id))
@@ -466,9 +470,14 @@ export const useCanvasStore = create((set, get) => ({
       }
     }
   },
-  setGroupColor: (groupId, color) => {
+  // `history: false` is for live colour-picker scrubbing — the caller pushes one
+  // undo entry when the picker opens so a drag across the wheel is one step.
+  setGroupColor: (groupId, color, { history = true } = {}) => {
     if (!groupId) return
-    get().pushHistory()
+    // Re-picking the current colour must not add an empty undo step (it would
+    // also wipe the redo stack).
+    if (get().items.find((it) => it.groupId === groupId)?.groupColor === color) return
+    if (history) get().pushHistory()
     set((s) => ({ items: s.items.map((it) => (it.groupId === groupId ? { ...it, groupColor: color } : it)) }))
   },
 
@@ -595,7 +604,6 @@ export const useCanvasStore = create((set, get) => ({
   },
 
   setHoverItem: (id) => set((s) => (s.hoverItemId === id ? {} : { hoverItemId: id })),
-  setGuides: (guides) => set((s) => (s.guides.length === 0 && guides.length === 0 ? {} : { guides })),
   setDropTarget: (groupId) =>
     set((s) => (s.dropTargetGroupId === groupId ? {} : { dropTargetGroupId: groupId })),
 

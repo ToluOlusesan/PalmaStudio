@@ -34,7 +34,7 @@ const TIPS = [
     bullets: [
       'Drag in images and video, or paste screenshots and links.',
       'Select references and press Ctrl G to frame them; name the frame and pick a layout.',
-      'Templates (in the dock) start a direction board with frames ready to fill.',
+      'Click a frame\'s colour dot (or the palette button) to recolour it.',
       'Drag the top dot to connect items — drop on empty board for a linked note.',
       'Select a frame → Compare to review two directions side by side.',
     ],

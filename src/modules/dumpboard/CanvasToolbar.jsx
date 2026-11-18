@@ -1,7 +1,7 @@
 import { useRef } from 'react'
 import {
   Cursor, Hand, Image as ImageIcon, VideoCamera, NotePencil, ChatCircle,
-  SquaresFour, Export, Layout,
+  SquaresFour, Export,
 } from '@phosphor-icons/react'
 import { useCanvasStore } from '../../store/canvasStore.js'
 
@@ -15,7 +15,6 @@ const TOOL_COLORS = {
   note: '#EF4444', // red
   comment: '#8B5CF6', // violet
   tidy: '#14B8A6', // teal
-  templates: '#0EA5E9', // sky
   export: '#6366F1', // indigo
 }
 
@@ -77,7 +76,7 @@ export default function CanvasToolbar({ count, onExport }) {
 // Floating drawing-tool dock — pinned bottom-centre over the canvas. Holds the
 // selection/pan tools and the add-content actions. Sits where the zoom pill
 // used to live; zoom is now the vertical stack at the bottom-right.
-export function ToolDock({ onAddNote, onAddComment, onAddFiles, onTidy, onTemplates, extra }) {
+export function ToolDock({ onAddNote, onAddComment, onAddFiles, onTidy, extra }) {
   const tool = useCanvasStore((s) => s.tool)
   const setTool = useCanvasStore((s) => s.setTool)
   const photoRef = useRef(null)
@@ -103,7 +102,6 @@ export function ToolDock({ onAddNote, onAddComment, onAddFiles, onTidy, onTempla
       <ToolBtn big icon={NotePencil} label="Add note" color={TOOL_COLORS.note} onClick={onAddNote} />
       <ToolBtn big icon={ChatCircle} label="Add comment" color={TOOL_COLORS.comment} onClick={onAddComment} />
       <Sep big />
-      <ToolBtn big icon={Layout} label="Templates" color={TOOL_COLORS.templates} onClick={onTemplates} />
       <ToolBtn big icon={SquaresFour} label="Tidy" color={TOOL_COLORS.tidy} onClick={onTidy}>Tidy</ToolBtn>
       {extra && (
         <>

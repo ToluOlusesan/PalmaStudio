@@ -1,6 +1,5 @@
 import { memo, useState, useEffect, useRef } from 'react'
 import { ImageBroken, ChatCircle, Minus, Lock, LinkSimple } from '@phosphor-icons/react'
-import { snapToGuides } from '../../utils/smartGuides.js'
 import { useCanvasStore } from '../../store/canvasStore.js'
 import { snapToGrid, loadImageSize } from '../../utils/canvasUtils.js'
 import { isGifItem } from '../../utils/pathUtils.js'
@@ -151,19 +150,6 @@ function CanvasItem({ item, zoom = 1, selected, panMode, animating, onContextMen
     )
     setDragging(true)
 
-    // Smart-guide targets: every other (non-moving) item's box, fixed for the
-    // whole drag. The moving selection's start box is offset by the drag delta.
-    const moving = new Set(ids)
-    const others = items.filter((it) => !moving.has(it.id) && it.type !== 'comment').map((it) => ({ x: it.x, y: it.y, w: it.width, h: it.height }))
-    const movingItems = items.filter((it) => moving.has(it.id))
-    const box0 = {
-      x: Math.min(...movingItems.map((it) => it.x)),
-      y: Math.min(...movingItems.map((it) => it.y)),
-    }
-    box0.w = Math.max(...movingItems.map((it) => it.x + it.width)) - box0.x
-    box0.h = Math.max(...movingItems.map((it) => it.y + it.height)) - box0.y
-    let snapAxes = { x: false, y: false }
-
     let moved = false
     let raf = 0
     let lastEv = null
@@ -172,16 +158,8 @@ function CanvasItem({ item, zoom = 1, selected, panMode, animating, onContextMen
     const frame = () => {
       raf = 0
       const ev = lastEv
-      let dx = (ev.clientX - e.clientX) / zoom
-      let dy = (ev.clientY - e.clientY) / zoom
-      // Alt disables guides, matching Figma.
-      const g = ev.altKey ? null : snapToGuides({ ...box0, x: box0.x + dx, y: box0.y + dy }, others, 6 / zoom)
-      if (g) {
-        dx += g.dx
-        dy += g.dy
-        snapAxes = { x: g.snapX, y: g.snapY }
-      } else snapAxes = { x: false, y: false }
-      useCanvasStore.getState().setGuides(g?.guides || [])
+      const dx = (ev.clientX - e.clientX) / zoom
+      const dy = (ev.clientY - e.clientY) / zoom
       useCanvasStore.getState().applyPositions(
         ids.map((id) => {
           const st = starts.get(id)
@@ -212,7 +190,6 @@ function CanvasItem({ item, zoom = 1, selected, panMode, animating, onContextMen
         cancelAnimationFrame(raf)
         frame()
       }
-      useCanvasStore.getState().setGuides([])
       setDragging(false)
       useCanvasStore.getState().setDropTarget(null)
       useCanvasStore.getState().setDraggingItems(false)
@@ -222,8 +199,7 @@ function CanvasItem({ item, zoom = 1, selected, panMode, animating, onContextMen
         useCanvasStore.getState().applyPositions(
           ids.map((id) => {
             const it = cur.find((i) => i.id === id)
-            // An axis held by a smart guide keeps that exact alignment.
-            return { id, x: snapAxes.x ? it.x : snapToGrid(it.x), y: snapAxes.y ? it.y : snapToGrid(it.y) }
+            return { id, x: snapToGrid(it.x), y: snapToGrid(it.y) }
           })
         )
         // If the grabbed item is a comment, (re)anchor it to whatever image its

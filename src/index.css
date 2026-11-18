@@ -783,8 +783,6 @@ input:focus {
 /* ---- Frames (1.4) --------------------------------------------------------
    The frame box eases its bounds only while members glide (layout/tidy), so
    it tracks drags and resizes 1:1; the title is a quiet chip that only gains a surface on hover. */
-/* Smart-guide hairline: the one bright mark on the board, only mid-drag. */
-:root { --guide: #ff3b6b; }
 .frame-box { transition: border-color 150ms, background-color 150ms; }
 .frame-box.gliding {
   transition: left 300ms cubic-bezier(0.22, 1, 0.36, 1), top 300ms cubic-bezier(0.22, 1, 0.36, 1),

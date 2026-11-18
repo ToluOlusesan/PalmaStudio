@@ -1,7 +1,7 @@
 import { useEffect, useCallback, useRef, useState, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Minus, Plus, ArrowsIn, Crop, Play, Pause, FilmSlate, ArrowLineUp, ArrowLineDown, Copy, Clipboard, ArrowCounterClockwise, Trash, FolderOpen, LinkSimple, Export, ArrowRight, ArrowsLeftRight, SelectionPlus, SelectionSlash, AlignLeft, AlignRight, AlignTop, AlignBottom, AlignCenterHorizontal, AlignCenterVertical, Rows, Columns, Lock, LockOpen, TextT, Hand, GridFour, Kanban, ArrowsHorizontal, SquareSplitHorizontal, CopySimple } from '@phosphor-icons/react'
-import { useCanvasStore, GROUP_COLORS } from '../../store/canvasStore.js'
+import { Minus, Plus, ArrowsIn, Crop, Play, Pause, FilmSlate, ArrowLineUp, ArrowLineDown, Copy, Clipboard, ArrowCounterClockwise, Trash, FolderOpen, LinkSimple, Export, ArrowRight, ArrowsLeftRight, SelectionPlus, SelectionSlash, AlignLeft, AlignRight, AlignTop, AlignBottom, AlignCenterHorizontal, AlignCenterVertical, Rows, Columns, Lock, LockOpen, TextT, Hand, GridFour, Kanban, ArrowsHorizontal, SquareSplitHorizontal, CopySimple, Palette } from '@phosphor-icons/react'
+import { useCanvasStore, GROUP_COLORS, FRAME_SWATCHES } from '../../store/canvasStore.js'
 import { useStoryboardStore } from '../../store/storyboardStore.js'
 import { useProjectStore } from '../../store/projectStore.js'
 import { useSessionStore } from '../../store/sessionStore.js'
@@ -19,9 +19,7 @@ import { appendBoardItem, landBoardItem } from '../../utils/boardOps.js'
 import { uid } from '../../utils/id.js'
 import CanvasItem from './CanvasItem.jsx'
 import Connectors from './Connectors.jsx'
-import TemplatePicker from './TemplatePicker.jsx'
 import CompareView from './CompareView.jsx'
-import { templateItems } from '../../utils/boardTemplates.js'
 import CanvasToolbar, { ToolDock } from './CanvasToolbar.jsx'
 import MediaLightbox from '../../components/MediaLightbox.jsx'
 import ContextMenu from '../../components/ContextMenu.jsx'
@@ -70,7 +68,6 @@ export default function DumpBoard({
   const toggleLock = useCanvasStore((s) => s.toggleLock)
   const dropTargetGroupId = useCanvasStore((s) => s.dropTargetGroupId)
   const draggingItems = useCanvasStore((s) => s.draggingItems)
-  const guides = useCanvasStore((s) => s.guides)
   const edges = useCanvasStore((s) => s.edges)
   const selectedEdgeId = useCanvasStore((s) => s.selectedEdgeId)
   const linking = useCanvasStore((s) => s.linking)
@@ -334,33 +331,11 @@ export default function DumpBoard({
     glide(() => useCanvasStore.getState().clearFrameOverlap(gid))
   }, [glide])
 
-  // Drop a template's frames at the viewport centre, then frame them in view.
-  const [templatesOpen, setTemplatesOpen] = useState(false)
-  const insertTemplate = useCallback((tpl) => {
-    setTemplatesOpen(false)
-    const st = useCanvasStore.getState()
-    const c = centreOfViewport()
-    const used = new Set(st.items.map((it) => it.groupColor).filter(Boolean))
-    const colors = [...GROUP_COLORS.filter((x) => !used.has(x)), ...GROUP_COLORS.filter((x) => used.has(x))]
-    const draft = templateItems(tpl, 0, 0, colors, uid)
-    const w = Math.max(...draft.map((it) => it.x + it.width))
-    const h = Math.max(...draft.map((it) => it.y + it.height))
-    let ox = snapToGrid(c.x - w / 2)
-    let oy = snapToGrid(c.y - h / 2)
-    // Never land on existing work: if the centred spot collides, go to the
-    // right of everything on the board, top-aligned with it.
-    const hits = st.items.some((it) => it.x < ox + w + 60 && ox - 60 < it.x + it.width && it.y < oy + h + 60 && oy - 60 < it.y + it.height)
-    if (hits) {
-      ox = snapToGrid(Math.max(...st.items.map((it) => it.x + it.width)) + 200)
-      oy = snapToGrid(Math.min(...st.items.map((it) => it.y)))
-    }
-    st.addItems(draft.map((it) => ({ ...it, x: it.x + ox, y: it.y + oy })))
-    requestAnimationFrame(() => {
-      zoomToSelection()
-      useCanvasStore.getState().clearSelection()
-    })
-  }, [centreOfViewport, zoomToSelection])
-
+  // Open frame-colour popover: { id, at: 'title' | 'toolbar' }. It anchors to
+  // whichever control opened it, so the toolbar route still shows when the
+  // frame's title chip is scrolled off screen.
+  const [colorPop, setColorPop] = useState(null)
+  const toggleColorPop = (id, at) => setColorPop((cur) => (cur?.id === id && cur.at === at ? null : { id, at }))
 
   // Annotation comment — starts expanded + empty (so you can type at once), then
   // minimises to a pin once you've written it.
@@ -1073,19 +1048,6 @@ export default function DumpBoard({
               onOpenMedia={setViewer}
             />
           ))}
-
-          {/* Smart guides — hairlines in canvas space, 1 screen px thick. */}
-          {guides.map((g, i) => (
-            <div
-              key={i}
-              className="absolute pointer-events-none"
-              style={
-                g.axis === 'x'
-                  ? { left: g.pos - 0.5 / zoom, top: g.from, width: 1 / zoom, height: g.to - g.from, background: 'var(--guide)', zIndex: 200000 }
-                  : { top: g.pos - 0.5 / zoom, left: g.from, height: 1 / zoom, width: g.to - g.from, background: 'var(--guide)', zIndex: 200000 }
-              }
-            />
-          ))}
         </div>
 
         {viewer && <MediaLightbox asset={viewer} onClose={() => setViewer(null)} />}
@@ -1134,10 +1096,14 @@ export default function DumpBoard({
                     count={g.count}
                     onPointerDown={(e) => startFrameDrag(e, g.id)}
                     onRename={() => setEditingGroup(g.id)}
-                    onColor={() => {
-                      const i = GROUP_COLORS.indexOf(g.color)
-                      setGroupColor(g.id, GROUP_COLORS[(i + 1) % GROUP_COLORS.length])
-                    }}
+                    onColor={() => toggleColorPop(g.id, 'title')}
+                  />
+                )}
+                {colorPop?.id === g.id && colorPop.at === 'title' && (
+                  <FrameColorPopover
+                    color={g.color}
+                    onPick={(c, opts) => setGroupColor(g.id, c, opts)}
+                    onClose={() => setColorPop(null)}
                   />
                 )}
               </div>
@@ -1190,6 +1156,7 @@ export default function DumpBoard({
                       <SelBtn icon={CopySimple} label="Duplicate as new direction" onClick={() => duplicateFrame(selection.groupId)} />
                       <SelSep />
                       <SelBtn icon={TextT} label="Rename frame" onClick={() => setEditingGroup(selection.groupId)} />
+                      <SelBtn colorToggle icon={Palette} label="Frame colour" active={colorPop?.id === selection.groupId} onClick={() => toggleColorPop(selection.groupId, 'toolbar')} />
                       <SelBtn icon={SelectionSlash} label="Unframe" onClick={() => ungroup(selectedIds)} />
                     </>
                   ) : (
@@ -1203,6 +1170,14 @@ export default function DumpBoard({
                   <SelSep />
                   <SelBtn icon={Trash} label="Delete" danger onClick={() => deleteItems(selectedIds)} />
                 </div>
+                {selection.grouped && colorPop?.id === selection.groupId && colorPop.at === 'toolbar' && (
+                  <FrameColorPopover
+                    className="right-0 top-full mt-1.5"
+                    color={groupBoxes.find((b) => b.id === selection.groupId)?.color}
+                    onPick={(c, opts) => setGroupColor(selection.groupId, c, opts)}
+                    onClose={() => setColorPop(null)}
+                  />
+                )}
               </div>
             )
           })()}
@@ -1299,11 +1274,9 @@ export default function DumpBoard({
           onAddComment={() => addComment()}
           onAddFiles={addFiles}
           onTidy={handleTidy}
-          onTemplates={() => setTemplatesOpen((v) => !v)}
           extra={tools}
         />
         {compare && <CompareView leftId={compare.left} rightId={compare.right} onClose={() => setCompare(null)} />}
-        {templatesOpen && <TemplatePicker onPick={insertTemplate} onClose={() => setTemplatesOpen(false)} />}
 
         {/* Zoom control — vertical stack, pinned bottom-right, always visible.
             The reliable way to zoom the board (trackpad pinch isn't forwarded by
@@ -1451,7 +1424,103 @@ const LAYOUT_BTNS = [
   { mode: 'row', icon: ArrowsHorizontal, label: 'Row layout' },
 ]
 
-// A frame's title: colour dot (click cycles the colour), name, member count.
+// Swatch popover for a frame's colour. Preset swatches commit on click (one
+// undo step each). The custom wheel scrubs live: the first `input` of a pick
+// pushes one undo entry, later ones apply without history, and the native
+// `change` (picker committed/closed) ends the pick — so a cancelled picker
+// leaves the undo/redo stacks untouched and every pick is its own step.
+function FrameColorPopover({ color, onPick, onClose, className = 'left-0 top-full mt-1.5' }) {
+  const ref = useRef(null)
+  const inputRef = useRef(null)
+  const closeRef = useRef(onClose)
+  closeRef.current = onClose
+  const onPickRef = useRef(onPick)
+  onPickRef.current = onPick
+  useEffect(() => {
+    const away = (e) => {
+      // The toggles (title dot, toolbar button) handle their own click, so an
+      // outside-close here would just reopen it on the same click.
+      if (!ref.current?.contains(e.target) && !e.target.closest?.('[data-frame-color-toggle]')) closeRef.current()
+    }
+    // Capture + stop so the board's own Escape (clear selection) doesn't also fire.
+    const esc = (e) => {
+      if (e.key !== 'Escape') return
+      e.stopPropagation()
+      closeRef.current()
+    }
+    window.addEventListener('pointerdown', away, true)
+    window.addEventListener('keydown', esc, true)
+    return () => {
+      window.removeEventListener('pointerdown', away, true)
+      window.removeEventListener('keydown', esc, true)
+    }
+  }, [])
+  useEffect(() => {
+    const el = inputRef.current
+    if (!el) return
+    let picking = false
+    const onInput = () => {
+      onPickRef.current(el.value, { history: !picking })
+      picking = true
+    }
+    // Picker done: end the pick and hand focus back, or the board's key
+    // handler (which ignores focused inputs) would swallow Ctrl+Z / Delete.
+    const onDone = () => {
+      picking = false
+      el.blur()
+    }
+    el.addEventListener('input', onInput)
+    el.addEventListener('change', onDone)
+    return () => {
+      el.removeEventListener('input', onInput)
+      el.removeEventListener('change', onDone)
+    }
+  }, [])
+  const lc =(color || '').toLowerCase()
+  const custom = !!color && !FRAME_SWATCHES.some((s) => s.toLowerCase() === lc)
+  return (
+    <div
+      ref={ref}
+      className={`pop-in glass-bar absolute z-40 rounded-lg p-2 grid grid-cols-6 gap-1.5 ${className}`}
+      onPointerDown={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      {FRAME_SWATCHES.map((s) => (
+        <button
+          key={s}
+          title={s}
+          aria-label={`Frame colour ${s}`}
+          onClick={() => {
+            onPick(s)
+            onClose()
+          }}
+          className="w-5 h-5 rounded-full transition-transform duration-150 hover:scale-110"
+          style={{ background: s, boxShadow: s.toLowerCase() === lc ? '0 0 0 2px var(--surface), 0 0 0 3.5px var(--ink)' : 'inset 0 0 0 0.5px var(--border-2)' }}
+        />
+      ))}
+      <label
+        title="Custom colour"
+        className="relative w-5 h-5 rounded-full cursor-pointer grid place-items-center overflow-hidden transition-transform duration-150 hover:scale-110"
+        style={{
+          background: custom ? color : 'conic-gradient(#ef4444, #f59e0b, #22c55e, #3b82f6, #8b5cf6, #ec4899, #ef4444)',
+          boxShadow: custom ? '0 0 0 2px var(--surface), 0 0 0 3.5px var(--ink)' : undefined,
+        }}
+      >
+        {!custom && <Plus size={10} weight="bold" className="text-white drop-shadow" />}
+        {/* Uncontrolled: the native listeners above drive it; React's onChange
+            would fire per input and can't tell a pick's start from its end. */}
+        <input
+          ref={inputRef}
+          type="color"
+          defaultValue={/^#[0-9a-f]{6}$/i.test(color || '') ? color : '#888888'}
+          className="absolute inset-0 opacity-0 cursor-pointer"
+        />
+      </label>
+    </div>
+  )
+}
+
+// A frame's title: colour dot (click opens the colour popover), name, member count.
 // Drag it to move the frame; click to select it; double-click to rename.
 function FrameTitle({ name, color, count, onPointerDown, onRename, onColor }) {
   return (
@@ -1463,6 +1532,7 @@ function FrameTitle({ name, color, count, onPointerDown, onRename, onColor }) {
       <button
         onPointerDown={(e) => e.stopPropagation()}
         onClick={onColor}
+        data-frame-color-toggle
         title="Change frame colour"
         className="w-3 h-3 rounded-full shrink-0 transition-transform duration-150 hover:scale-125"
         style={{ background: color }}
@@ -1473,10 +1543,11 @@ function FrameTitle({ name, color, count, onPointerDown, onRename, onColor }) {
   )
 }
 
-function SelBtn({ icon: Icon, label, onClick, danger, active }) {
+function SelBtn({ icon: Icon, label, onClick, danger, active, colorToggle }) {
   return (
     <button
       onClick={onClick}
+      data-frame-color-toggle={colorToggle || undefined}
       title={label}
       aria-label={label}
       aria-pressed={active}

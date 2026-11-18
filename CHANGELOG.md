@@ -5,6 +5,19 @@ All notable changes to Palma are recorded here. Versions follow
 installer — electron-updater downloads only the changed blocks against the
 previously installed version (via the `.blockmap` published with each build).
 
+## [1.4.1] — 2026-11-17 · beta
+
+### Changed
+- **Frame colours are now a picker.** Click a frame's colour dot (or the new
+  palette button in the frame's selection toolbar) for ten swatches plus a
+  custom colour wheel. Each pick is one undo step; scrubbing the wheel is one
+  step too. Exports map custom colours to the nearest named hue.
+
+### Removed
+- **Smart guides.** No more pink alignment lines or edge-snapping while
+  dragging — items still settle onto the 24px grid.
+- **Board templates** and the Templates button in the dock.
+
 ## [1.4.0] — 2026-11-17 · beta
 
 Palma becomes an art-direction board: one canvas where references are
